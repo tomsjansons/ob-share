@@ -22,6 +22,7 @@ This project provides a cloud-based, containerized Obsidian installation that:
 | Window Manager | Openbox | Minimal window management |
 | Remote Access | x11vnc | VNC server (port 5900) |
 | Web Framework | Next.js 15 | Web portal (port 3000) |
+| PWA | @ducanh2912/next-pwa | Progressive Web App support |
 | API | tRPC | Type-safe API layer |
 | Authentication | Better Auth | GitHub OAuth |
 | Database | SQLite + Drizzle ORM | User data and sessions |
@@ -46,8 +47,11 @@ ob-share/
 │   ├── app/                # Next.js App Router pages
 │   │   ├── page.tsx        # Landing page (logged out)
 │   │   ├── account/        # Account page (logged in)
+│   │   ├── share/          # Web Share Target handler
 │   │   └── api/            # API routes (auth, tRPC)
 │   ├── components/         # React components
+│   │   ├── share-page.tsx  # Share target authenticated view
+│   │   ├── share-login.tsx # Share target login prompt
 │   │   └── ui/             # shadcn/ui components
 │   ├── lib/                # Shared utilities
 │   │   ├── auth.ts         # Better Auth configuration
@@ -57,7 +61,10 @@ ob-share/
 │       ├── db/             # Database schema and connection
 │       └── trpc/           # tRPC routers
 ├── drizzle/                # Database migrations
-├── public/                 # Static assets
+├── public/
+│   ├── manifest.json       # PWA manifest with share target
+│   ├── icon-192.svg        # PWA icon (192x192)
+│   └── icon-512.svg        # PWA icon (512x512)
 └── .github/
     └── workflows/
         └── fly-deploy.yml  # CI/CD workflow
@@ -310,6 +317,48 @@ pnpm db:push
 pnpm db:studio
 ```
 
+## Progressive Web App (PWA)
+
+The web portal is a Progressive Web App that can be installed on mobile devices and supports the Web Share Target API.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| Installable | Add to home screen on Android/iOS |
+| Offline Support | Service worker caches assets |
+| Share Target | Receive shared content from other apps |
+| Native Feel | Standalone display mode |
+
+### Installing on Android
+
+1. Open the web portal in Chrome
+2. Tap the menu (three dots) → "Add to Home screen"
+3. The app will appear on your home screen with the ob-share icon
+
+### Web Share Target
+
+When installed as a PWA, ob-share appears as a share target in Android's share menu. You can share:
+- **URLs** from browsers or other apps
+- **Text** from any app with share functionality
+- **Titles** (when provided by the sharing app)
+
+**Authentication Required:** Users must be logged in to receive shared content. If not authenticated, the app will prompt for GitHub login while preserving the shared data.
+
+### Share Target Flow
+
+1. Share content from any app → Select "ob-share"
+2. If not logged in → Login prompt appears (share data preserved)
+3. After authentication → Shared content is displayed
+4. Implement custom handling in `src/components/share-page.tsx`
+
+### PWA Configuration
+
+The PWA is configured in:
+- `public/manifest.json` - App manifest with share target config
+- `next.config.ts` - PWA plugin configuration
+- `src/app/layout.tsx` - Meta tags and theme colors
+
 ## Troubleshooting
 
 ### VNC Connection Issues
@@ -366,7 +415,8 @@ docker compose up -d --build
 - **Remote access:** Access your notes from any device with a VNC client
 - **Backup solution:** Maintain a cloud-based copy of your vault
 - **Shared workspace:** Multiple users can connect via VNC (shared mode enabled)
-- **Future:** AI-powered content sharing and processing through the web portal
+- **Mobile sharing:** Share URLs, text, and content from mobile apps directly to ob-share
+- **Quick capture:** Use the PWA as a share target for rapid content capture on the go
 
 ## Contributing
 
