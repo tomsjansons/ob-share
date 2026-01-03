@@ -48,6 +48,8 @@ ob-share/
 │   │   ├── page.tsx        # Landing page (logged out)
 │   │   ├── account/        # Account page (logged in)
 │   │   ├── share/          # Web Share Target handler
+│   │   │   ├── page.tsx    # Share page (GET, displays content)
+│   │   │   └── route.ts    # Share handler (POST, processes files)
 │   │   └── api/            # API routes (auth, tRPC)
 │   ├── components/         # React components
 │   │   ├── share-page.tsx  # Share target authenticated view
@@ -56,6 +58,7 @@ ob-share/
 │   ├── lib/                # Shared utilities
 │   │   ├── auth.ts         # Better Auth configuration
 │   │   ├── auth-client.ts  # Client-side auth
+│   │   ├── share-store.ts  # Temporary storage for shared files
 │   │   └── trpc/           # tRPC client/provider
 │   └── server/
 │       ├── db/             # Database schema and connection
@@ -352,8 +355,14 @@ When installed as a PWA, ob-share appears as a share target in Android's share m
 - **URLs** from browsers or other apps
 - **Text** from any app with share functionality
 - **Titles** (when provided by the sharing app)
+- **Images** (JPEG, PNG, GIF, WebP, etc.)
+- **Audio** files (MP3, WAV, etc.)
+- **Video** files (MP4, WebM, etc.)
+- **PDF** documents
 
-**Authentication Required:** Users must be logged in to receive shared content. If not authenticated, the app will prompt for GitHub login while preserving the shared data.
+**File Size Limit:** Files up to 10MB are supported. Larger files will be skipped.
+
+**Authentication Required:** Users must be logged in to receive shared content. If not authenticated, the app will prompt for GitHub login while preserving text data. Note: Files cannot be preserved across the login redirect and must be re-shared after signing in.
 
 ### Share Target Flow
 

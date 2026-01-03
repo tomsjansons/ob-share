@@ -9,15 +9,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { signIn } from "@/lib/auth-client";
-import { Github, Share2 } from "lucide-react";
+import { Github, Share2, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
+import type { SharedFile } from "@/lib/share-store";
 
 interface ShareLoginProps {
   sharedData: {
     title: string;
     text: string;
     url: string;
+    files: SharedFile[];
+    error?: string;
   };
 }
 
@@ -29,6 +32,7 @@ export function ShareLogin({ sharedData }: ShareLoginProps) {
     setIsLoading(true);
     try {
       // Build callback URL with current share params
+      // Note: Files cannot be preserved across OAuth redirect
       const callbackParams = new URLSearchParams();
       if (sharedData.title) callbackParams.set("title", sharedData.title);
       if (sharedData.text) callbackParams.set("text", sharedData.text);
@@ -48,8 +52,10 @@ export function ShareLogin({ sharedData }: ShareLoginProps) {
     }
   };
 
-  const hasSharedContent =
+  const hasTextContent =
     sharedData.title || sharedData.text || sharedData.url;
+  const hasFiles = sharedData.files && sharedData.files.length > 0;
+  const hasSharedContent = hasTextContent || hasFiles;
   const error = searchParams.get("error");
 
   return (
@@ -95,6 +101,20 @@ export function ShareLogin({ sharedData }: ShareLoginProps) {
                   <span className="font-medium">URL:</span> {sharedData.url}
                 </p>
               )}
+              {hasFiles && (
+                <p className="truncate">
+                  <span className="font-medium">Files:</span> {sharedData.files.length} file(s)
+                </p>
+              )}
+            </div>
+          )}
+
+          {hasFiles && (
+            <div className="rounded-md bg-amber-500/10 p-3 text-sm flex gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-amber-700 dark:text-amber-400">
+                Files cannot be preserved during login. Text content will be saved, but please re-share files after signing in.
+              </p>
             </div>
           )}
 
