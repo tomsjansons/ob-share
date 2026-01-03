@@ -49,7 +49,10 @@ RUN useradd -m -s /bin/bash obsidian
 RUN mkdir -p /home/obsidian/.vnc \
     && mkdir -p /home/obsidian/vault \
     && mkdir -p /home/obsidian/.config/obsidian \
-    && chown -R obsidian:obsidian /home/obsidian
+    && mkdir -p /home/obsidian/Documents \
+    && mkdir -p /data \
+    && chown -R obsidian:obsidian /home/obsidian \
+    && chown obsidian:obsidian /data
 
 # Copy configuration files
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
@@ -68,8 +71,8 @@ ENV SCREEN_RESOLUTION=1280x720x24
 # Expose VNC and HTTP ports
 EXPOSE 5900 80
 
-# Volume for vault storage and Obsidian config
-VOLUME ["/home/obsidian/vault", "/home/obsidian/.config/obsidian"]
+# Volume for vault storage, Obsidian config, and persistent data
+VOLUME ["/home/obsidian/vault", "/home/obsidian/.config/obsidian", "/data"]
 
 # Set entrypoint
 ENTRYPOINT ["/entrypoint.sh"]
