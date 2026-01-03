@@ -9,13 +9,19 @@ services:
     restart: unless-stopped
     ports:
       - "5900:5900"  # VNC port
-      - "80:80"      # HTTP port for landing page
+      - "3000:3000"  # Next.js HTTP port
     volumes:
       - ./vault:/home/obsidian/vault
+      - ./data:/data
       - obsidian-config:/home/obsidian/.config/obsidian
     environment:
       - VNC_PASSWORD=${VNC_PASSWORD:-obsidian}
       - SCREEN_RESOLUTION=${SCREEN_RESOLUTION:-1280x720x24}
+      - DATABASE_URL=/data/ob-share.db
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
     # Required for GPU acceleration (optional)
     # devices:
     #   - /dev/dri:/dev/dri

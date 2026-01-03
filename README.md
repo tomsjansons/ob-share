@@ -1,6 +1,6 @@
 # Obsidian Share (ob-share)
 
-A headless Obsidian instance running in Docker for seamless note synchronization across all your devices. Access your Obsidian vault remotely via VNC from anywhere.
+A headless Obsidian instance running in Docker for seamless note synchronization across all your devices. Access your Obsidian vault remotely via VNC from anywhere, with a Next.js web portal for authentication and future vault management.
 
 ## Overview
 
@@ -9,7 +9,7 @@ This project provides a cloud-based, containerized Obsidian installation that:
 - Provides remote desktop access via VNC
 - Enables Obsidian Sync across all your devices
 - Deploys to Fly.io with automatic CI/CD
-- Includes a landing page for easy access
+- Includes a Next.js web portal with GitHub authentication
 
 ## Technology Stack
 
@@ -21,7 +21,11 @@ This project provides a cloud-based, containerized Obsidian installation that:
 | Display | Xvfb (Virtual Framebuffer) | Headless X11 display |
 | Window Manager | Openbox | Minimal window management |
 | Remote Access | x11vnc | VNC server (port 5900) |
-| Web Server | Nginx | Landing page (port 80) |
+| Web Framework | Next.js 15 | Web portal (port 3000) |
+| API | tRPC | Type-safe API layer |
+| Authentication | Better Auth | GitHub OAuth |
+| Database | SQLite + Drizzle ORM | User data and sessions |
+| UI | shadcn/ui + Tailwind CSS | Component library |
 | Process Manager | supervisord | Service orchestration |
 | Application | Obsidian v1.7.7 | Note-taking app |
 
@@ -29,16 +33,31 @@ This project provides a cloud-based, containerized Obsidian installation that:
 
 ```
 ob-share/
-├── Dockerfile              # Container image definition
+├── Dockerfile              # Multi-stage container image
 ├── docker-compose.yml      # Docker Compose configuration
 ├── entrypoint.sh           # Container startup script
 ├── fly.toml                # Fly.io deployment config
 ├── supervisord.conf        # Process manager config
-├── nginx.conf              # Web server config
+├── package.json            # Node.js dependencies
+├── drizzle.config.ts       # Database configuration
 ├── .env.example            # Environment variables template
 ├── .gitignore              # Git ignore patterns
-├── public/
-│   └── index.html          # Landing page
+├── src/
+│   ├── app/                # Next.js App Router pages
+│   │   ├── page.tsx        # Landing page (logged out)
+│   │   ├── account/        # Account page (logged in)
+│   │   └── api/            # API routes (auth, tRPC)
+│   ├── components/         # React components
+│   │   └── ui/             # shadcn/ui components
+│   ├── lib/                # Shared utilities
+│   │   ├── auth.ts         # Better Auth configuration
+│   │   ├── auth-client.ts  # Client-side auth
+│   │   └── trpc/           # tRPC client/provider
+│   └── server/
+│       ├── db/             # Database schema and connection
+│       └── trpc/           # tRPC routers
+├── drizzle/                # Database migrations
+├── public/                 # Static assets
 └── .github/
     └── workflows/
         └── fly-deploy.yml  # CI/CD workflow
@@ -49,8 +68,20 @@ ob-share/
 ### Prerequisites
 
 - Docker and Docker Compose installed
+- Node.js 20+ and pnpm installed
 - A VNC viewer (e.g., TigerVNC, RealVNC, or any VNC client)
+- A GitHub OAuth App (for authentication)
 - (Optional) Obsidian Sync subscription for cloud sync
+
+### GitHub OAuth Setup
+
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Click "New OAuth App"
+3. Fill in the details:
+   - **Application name:** ob-share
+   - **Homepage URL:** `http://localhost:3000` (local) or `https://ob-share.fly.dev` (production)
+   - **Authorization callback URL:** `http://localhost:3000/api/auth/callback/github` (local) or `https://ob-share.fly.dev/api/auth/callback/github` (production)
+4. Copy the Client ID and generate a Client Secret
 
 ### Local Setup
 
@@ -60,25 +91,53 @@ ob-share/
    cd ob-share
    ```
 
-2. **Configure environment variables:**
+2. **Install dependencies:**
    ```bash
-   cp .env.example .env
-   # Edit .env to customize settings
+   pnpm install
    ```
 
-3. **Build and start the container:**
+3. **Configure environment variables:**
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env` and fill in:
+   - `BETTER_AUTH_SECRET` - Generate with: `openssl rand -base64 32`
+   - `GITHUB_CLIENT_ID` - From GitHub OAuth App
+   - `GITHUB_CLIENT_SECRET` - From GitHub OAuth App
+
+4. **Build and start the container:**
    ```bash
    docker compose up -d
    ```
 
-4. **Access the services:**
-   - **Landing Page:** Open `http://localhost` in your browser
+5. **Access the services:**
+   - **Web Portal:** Open `http://localhost:3000` in your browser
    - **VNC Access:** Connect to `localhost:5900` with your VNC viewer
 
-5. **Set up Obsidian:**
-   - In the VNC session, open the vault at `/home/obsidian/vault`
+6. **Set up Obsidian:**
+   - In the VNC session, open the vault at `/home/obsidian/Documents`
    - Log in with your Obsidian account
    - Enable Obsidian Sync to synchronize notes
+
+### Development Mode
+
+For local development without Docker:
+
+```bash
+# Install dependencies
+pnpm install
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your values
+
+# Generate database and run migrations
+pnpm db:push
+
+# Start development server
+pnpm dev
+```
 
 ## Configuration
 
@@ -87,7 +146,12 @@ ob-share/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VNC_PASSWORD` | `obsidian` | Password for VNC remote access |
-| `SCREEN_RESOLUTION` | `1280x720x24` | Virtual display resolution (width x height x color depth) |
+| `SCREEN_RESOLUTION` | `1280x720x24` | Virtual display resolution |
+| `DATABASE_URL` | `./data/ob-share.db` | SQLite database path |
+| `BETTER_AUTH_SECRET` | (required) | Secret for session encryption |
+| `BETTER_AUTH_URL` | `http://localhost:3000` | Base URL for auth callbacks |
+| `GITHUB_CLIENT_ID` | (required) | GitHub OAuth client ID |
+| `GITHUB_CLIENT_SECRET` | (required) | GitHub OAuth client secret |
 
 ### Volumes
 
@@ -96,25 +160,32 @@ ob-share/
 | Local Path | Container Path | Purpose |
 |------------|----------------|---------|
 | `./vault` | `/home/obsidian/vault` | Your Obsidian notes (synced) |
-| `obsidian-config` (named volume) | `/home/obsidian/.config/obsidian` | Obsidian settings and sync data |
+| `./data` | `/data` | SQLite database |
+| `obsidian-config` (named volume) | `/home/obsidian/.config/obsidian` | Obsidian settings |
 
 #### Fly.io Deployment (Persistent Volume)
 
 On Fly.io, a persistent volume is mounted at `/data` with the following structure:
 
-| Volume Path | Symlinked To | Purpose |
-|-------------|--------------|---------|
-| `/data/Documents` | `/home/obsidian/Documents` | Persistent document storage |
-| `/data/obsidian-config` | `/home/obsidian/.config/obsidian` | Obsidian settings and sync data |
-
-The volume is automatically configured during deployment. Data persists across container restarts and redeployments.
+| Volume Path | Purpose |
+|-------------|---------|
+| `/data/Documents` | Persistent document storage |
+| `/data/obsidian-config` | Obsidian settings and sync data |
+| `/data/ob-share.db` | SQLite database |
 
 ### Port Mappings
 
 | Port | Service | Protocol |
 |------|---------|----------|
 | 5900 | x11vnc (VNC) | TCP |
-| 80 | Nginx (HTTP) | TCP |
+| 3000 | Next.js (HTTP) | TCP |
+
+### Allow List
+
+The application uses a GitHub username allow list to restrict access. Initial users are seeded in the database during container startup. Currently, the allow list contains:
+- `tomsjansons`
+
+To add more users, you can directly insert into the `allow_list` table in the SQLite database.
 
 ## Architecture
 
@@ -124,7 +195,7 @@ The container uses supervisord to manage all services with automatic restart cap
 
 | Priority | Service | Description |
 |----------|---------|-------------|
-| 50 | nginx | Web server for landing page |
+| 50 | nextjs | Next.js web portal |
 | 100 | xvfb | Virtual X11 framebuffer (display :5) |
 | 200 | openbox | Minimal window manager |
 | 300 | x11vnc | VNC server with password authentication |
@@ -132,13 +203,15 @@ The container uses supervisord to manage all services with automatic restart cap
 
 ### Startup Flow
 
-1. `entrypoint.sh` initializes VNC password and environment
-2. supervisord launches services in priority order
-3. Xvfb creates virtual display
-4. Openbox provides window management
-5. x11vnc exposes display over VNC
-6. Obsidian starts in the virtual display
-7. Nginx serves the landing page
+1. `entrypoint.sh` initializes persistent volume and VNC password
+2. Database migrations run automatically
+3. Database is seeded with initial allow list
+4. supervisord launches services in priority order
+5. Next.js starts and serves the web portal
+6. Xvfb creates virtual display
+7. Openbox provides window management
+8. x11vnc exposes display over VNC
+9. Obsidian starts in the virtual display
 
 ## Deployment
 
@@ -151,9 +224,19 @@ The project is configured for Fly.io deployment with the following specification
 | App Name | `ob-share` |
 | Region | `arn` (Dublin, Ireland) |
 | CPU | 1 shared core |
-| Memory | 384 MB |
+| Memory | 1 GB |
 | Volume | 1 GB persistent storage |
 | Auto-scaling | Enabled (auto-stop/start) |
+
+#### Setting Secrets
+
+Before deploying, set the required secrets:
+
+```bash
+flyctl secrets set BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
+flyctl secrets set GITHUB_CLIENT_ID="your-client-id"
+flyctl secrets set GITHUB_CLIENT_SECRET="your-client-secret"
+```
 
 #### Automatic Deployment (CI/CD)
 
@@ -181,14 +264,11 @@ Pushes to the `main` branch trigger automatic deployment via GitHub Actions.
    ```bash
    flyctl volumes create obsidian_data --region arn --size 1
    ```
-   This creates a 1GB volume for storing Obsidian config and documents.
 
 4. **Deploy the application:**
    ```bash
    flyctl deploy --remote-only --ha=false
    ```
-
-**Note:** The volume must be created before the first deployment. Subsequent deployments will reuse the existing volume.
 
 #### Connecting via VNC
 
@@ -210,27 +290,24 @@ Since VNC (port 5900) is not exposed publicly, use `fly proxy` to create a secur
    - Log in with your Obsidian account (if using Obsidian Sync)
    - Enable Obsidian Sync to synchronize your notes across devices
 
-Your Obsidian settings and documents are persisted in the Fly.io volume, so they survive restarts and redeployments.
+## Database Management
 
-### Docker Hub / Custom Registry
+### Running Migrations
 
-Build and push to your own registry:
-
-```bash
-docker build -t your-registry/ob-share:latest .
-docker push your-registry/ob-share:latest
-```
-
-## Updating Obsidian
-
-To update the Obsidian version:
+Migrations run automatically on container startup. For manual migration:
 
 ```bash
-# Rebuild with a specific version
-docker compose build --build-arg OBSIDIAN_VERSION=1.8.0
+# Generate migration from schema changes
+pnpm db:generate
 
-# Restart the container
-docker compose up -d
+# Apply migrations
+pnpm db:migrate
+
+# Push schema directly (development only)
+pnpm db:push
+
+# Open Drizzle Studio (database GUI)
+pnpm db:studio
 ```
 
 ## Troubleshooting
@@ -240,6 +317,11 @@ docker compose up -d
 - **Connection refused:** Ensure the container is running (`docker compose ps`)
 - **Authentication failed:** Check your `VNC_PASSWORD` in `.env`
 - **Black screen:** Wait a few seconds for Obsidian to fully start
+
+### Authentication Issues
+
+- **Access denied:** Your GitHub username is not on the allow list
+- **OAuth error:** Check that callback URLs match in GitHub OAuth settings
 
 ### Display Issues
 
@@ -254,6 +336,9 @@ docker compose logs -f
 
 # View specific service logs
 docker compose logs obsidian
+
+# View Next.js logs in container
+docker compose exec obsidian cat /var/log/supervisor/nextjs.log
 ```
 
 ### Restart Services
@@ -269,8 +354,10 @@ docker compose up -d --build
 ## Security Considerations
 
 - **VNC Password:** Change the default password in production
-- **Network Exposure:** Consider using VPN or SSH tunnel for remote access
-- **Fly.io:** HTTPS is enforced automatically
+- **Network Exposure:** VNC is not exposed publicly on Fly.io
+- **Authentication:** GitHub OAuth with allow list restricts access
+- **Secrets:** Never commit `.env` files or secrets to version control
+- **HTTPS:** Enforced automatically on Fly.io
 - **Container Security:** Runs with `seccomp:unconfined` for Obsidian compatibility
 
 ## Use Cases
@@ -279,6 +366,7 @@ docker compose up -d --build
 - **Remote access:** Access your notes from any device with a VNC client
 - **Backup solution:** Maintain a cloud-based copy of your vault
 - **Shared workspace:** Multiple users can connect via VNC (shared mode enabled)
+- **Future:** AI-powered content sharing and processing through the web portal
 
 ## Contributing
 
