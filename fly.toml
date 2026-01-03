@@ -17,8 +17,8 @@ primary_region = 'arn'
   processes = ['app']
 
 [[http_service.checks]]
-  grace_period = "30s"
-  interval = "10s"
+  grace_period = "45s"
+  interval = "15s"
   method = "GET"
   timeout = "5s"
   path = "/health"
@@ -26,6 +26,8 @@ primary_region = 'arn'
 [env]
   DATABASE_URL = "/data/ob-share.db"
   BETTER_AUTH_URL = "https://ob-share.fly.dev"
+  HOSTNAME = "0.0.0.0"
+  PORT = "3000"
 
 [[mounts]]
   source = 'obsidian_data'
