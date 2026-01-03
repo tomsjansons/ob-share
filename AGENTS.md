@@ -69,14 +69,14 @@ The manifest configures the share target to accept:
 
 | File | Purpose |
 |------|---------|
-| `src/app/share/route.ts` | POST handler for file uploads |
+| `src/app/api/share/route.ts` | POST handler for file uploads |
 | `src/lib/share-store.ts` | Temporary in-memory storage for shared data |
 
 ### Modifying Share Behavior
 
 To change how shared content is processed:
 1. Update `src/components/share-page.tsx` for authenticated file/content display
-2. Update `src/app/share/route.ts` to modify file processing
+2. Update `src/app/api/share/route.ts` to modify file processing
 3. The share data is stored temporarily and retrieved by ID
 4. Authentication check happens in `src/app/share/page.tsx`
 
@@ -97,3 +97,44 @@ To modify accepted file types, update `public/manifest.json`:
   }
 ]
 ```
+
+## Vault Integration
+
+The app saves shared content to the Obsidian vault automatically.
+
+### Key Vault Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/vault.ts` | Vault file operations (save notes, handle attachments) |
+| `src/server/trpc/routers/vault.ts` | tRPC router for vault operations |
+
+### Vault Save Flow
+
+1. User shares content → POST to `/api/share`
+2. Content stored temporarily in memory (`share-store.ts`)
+3. Share page loads and displays content
+4. tRPC mutation `vault.saveSharedContent` is called automatically
+5. Markdown note created at `{VAULT_ROOT}/incoming/{timestamp}-{name}.md`
+6. Attachments saved alongside with same naming convention
+
+### Frontmatter Schema
+
+Notes include YAML frontmatter with these fields:
+- `location`: String describing share location (country, city, area, street)
+- `created`: ISO 8601 timestamp
+- `tags`: Array of strings (empty by default)
+- `projects`: Array of strings (empty by default)
+
+### Modifying Vault Behavior
+
+To change how content is saved to the vault:
+1. Update `src/lib/vault.ts` for file operations and frontmatter generation
+2. Update `src/server/trpc/routers/vault.ts` for API changes
+3. Update `src/components/share-page.tsx` for UI feedback
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VAULT_ROOT` | `/home/obsidian/vault` | Path to Obsidian vault root |

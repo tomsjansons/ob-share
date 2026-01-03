@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -8,9 +9,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Check, Share2, ArrowLeft, Image, Music, Video, FileText } from "lucide-react";
+import { Check, Share2, ArrowLeft, Image, Music, Video, FileText, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import Link from "next/link";
 import type { SharedFile } from "@/lib/share-store";
+import { trpc } from "@/lib/trpc/client";
 
 interface SharePageProps {
   user: {
@@ -100,11 +102,52 @@ function FilePreview({ file }: { file: SharedFile }) {
   );
 }
 
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
 export function SharePage({ user, sharedData }: SharePageProps) {
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedPath, setSavedPath] = useState<string | null>(null);
+
+  const saveToVault = trpc.vault.saveSharedContent.useMutation({
+    onSuccess: (result) => {
+      if (result.success) {
+        setSaveStatus("saved");
+        setSavedPath(result.notePath || null);
+      } else {
+        setSaveStatus("error");
+        setSaveError(result.error || "Failed to save to vault");
+      }
+    },
+    onError: (error) => {
+      setSaveStatus("error");
+      setSaveError(error.message);
+    },
+  });
+
   const hasTextContent =
     sharedData.title || sharedData.text || sharedData.url;
   const hasFiles = sharedData.files && sharedData.files.length > 0;
   const hasSharedContent = hasTextContent || hasFiles;
+
+  // Automatically save to vault when content is received
+  useEffect(() => {
+    if (hasSharedContent && saveStatus === "idle") {
+      setSaveStatus("saving");
+      saveToVault.mutate({
+        title: sharedData.title || undefined,
+        text: sharedData.text || undefined,
+        url: sharedData.url || undefined,
+        files: sharedData.files?.map((f) => ({
+          name: f.name,
+          type: f.type,
+          dataUrl: f.dataUrl,
+        })),
+        // Location will be added later when we have geolocation support
+        location: undefined,
+      });
+    }
+  }, [hasSharedContent, saveStatus, sharedData, saveToVault]);
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -188,15 +231,47 @@ export function SharePage({ user, sharedData }: SharePageProps) {
                 </div>
               )}
 
-              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Check className="h-4 w-4 text-green-500" />
-                <span>Received as {user.name || user.email}</span>
+              {/* Save status indicator */}
+              <div className="rounded-md bg-muted/50 p-3">
+                {saveStatus === "saving" && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Saving to vault...</span>
+                  </div>
+                )}
+                {saveStatus === "saved" && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-center gap-2 text-sm text-green-600">
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>Saved to Obsidian vault</span>
+                    </div>
+                    {savedPath && (
+                      <p className="text-xs text-center text-muted-foreground">
+                        {savedPath}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {saveStatus === "error" && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-center gap-2 text-sm text-destructive">
+                      <XCircle className="h-4 w-4" />
+                      <span>Failed to save to vault</span>
+                    </div>
+                    {saveError && (
+                      <p className="text-xs text-center text-muted-foreground">
+                        {saveError}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {saveStatus === "idle" && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Check className="h-4 w-4 text-green-500" />
+                    <span>Received as {user.name || user.email}</span>
+                  </div>
+                )}
               </div>
-
-              <p className="text-center text-sm text-muted-foreground">
-                Share target functionality is set up. Implement your custom
-                handling logic here.
-              </p>
             </>
           ) : (
             <p className="text-center text-sm text-muted-foreground">
