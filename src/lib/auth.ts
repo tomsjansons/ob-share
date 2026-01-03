@@ -1,0 +1,89 @@
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db } from "@/server/db";
+import * as schema from "@/server/db/schema";
+import { eq } from "drizzle-orm";
+
+// Helper function to check if a GitHub username is allowed
+async function isUsernameAllowed(username: string): Promise<boolean> {
+  const result = await db
+    .select()
+    .from(schema.allowList)
+    .where(eq(schema.allowList.githubUsername, username.toLowerCase()))
+    .limit(1);
+
+  return result.length > 0;
+}
+
+export const auth = betterAuth({
+  database: drizzleAdapter(db, {
+    provider: "sqlite",
+    schema: {
+      user: schema.user,
+      session: schema.session,
+      account: schema.account,
+      verification: schema.verification,
+    },
+  }),
+  baseURL: process.env.BETTER_AUTH_URL,
+  secret: process.env.BETTER_AUTH_SECRET,
+  socialProviders: {
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    },
+  },
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["github"],
+    },
+  },
+  denySignIn: async ({ user, account }: { user: { id: string; name: string; email: string }; account: { providerId: string; accountId: string } | null }) => {
+    // Only check for GitHub provider
+    if (account?.providerId !== "github") {
+      return false; // Allow non-GitHub providers (though we only have GitHub)
+    }
+
+    // Get the GitHub username from the account
+    // The account.accountId is the GitHub user ID
+    // We can fetch the username from GitHub's API
+    try {
+      const response = await fetch(
+        `https://api.github.com/user/${account.accountId}`,
+        {
+          headers: {
+            Accept: "application/vnd.github.v3+json",
+            "User-Agent": "ob-share",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        console.error("Failed to fetch GitHub user info");
+        return true; // Deny if we can't verify
+      }
+
+      const githubUser = await response.json();
+      const username = githubUser.login;
+
+      const allowed = await isUsernameAllowed(username);
+
+      if (!allowed) {
+        console.log(`Access denied for GitHub user: ${username}`);
+        return true; // Deny sign in
+      }
+
+      return false; // Allow sign in
+    } catch (error) {
+      console.error("Error checking allow list:", error);
+      return true; // Deny on error
+    }
+  },
+  advanced: {
+    cookiePrefix: "ob-share",
+  },
+});
+
+export { isUsernameAllowed };
+export type Session = typeof auth.$Infer.Session;

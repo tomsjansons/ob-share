@@ -1,9 +1,34 @@
+# Stage 1: Build Next.js application
+FROM node:20-alpine AS nextjs-builder
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-lock.yaml* ./
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile || pnpm install
+
+# Copy source files
+COPY src ./src
+COPY public ./public
+COPY next.config.ts tsconfig.json tailwind.config.ts postcss.config.mjs drizzle.config.ts ./
+COPY drizzle ./drizzle
+
+# Build the application
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm build
+
+# Stage 2: Final runtime image
 FROM ubuntu:22.04
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install required packages
+# Install required packages including Node.js
 RUN apt-get update && apt-get install -y \
     openbox \
     xvfb \
@@ -31,8 +56,17 @@ RUN apt-get update && apt-get install -y \
     libpango-1.0-0 \
     libcairo2 \
     fonts-liberation \
-    nginx \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 20 LTS
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm globally
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Set Obsidian version - can be overridden at build time
 ARG OBSIDIAN_VERSION=1.7.7
@@ -45,31 +79,44 @@ RUN wget -q "https://github.com/obsidianmd/obsidian-releases/releases/download/v
 # Create non-root user for running Obsidian
 RUN useradd -m -s /bin/bash obsidian
 
-# Create directories for VNC password and vault storage
+# Create directories for VNC password, vault storage, and data
 RUN mkdir -p /home/obsidian/.vnc \
     && mkdir -p /home/obsidian/vault \
     && mkdir -p /home/obsidian/.config/obsidian \
     && mkdir -p /home/obsidian/Documents \
     && mkdir -p /data \
+    && mkdir -p /app \
     && chown -R obsidian:obsidian /home/obsidian \
-    && chown obsidian:obsidian /data
+    && chown obsidian:obsidian /data \
+    && chown obsidian:obsidian /app
+
+# Copy Next.js standalone build from builder
+COPY --from=nextjs-builder /app/.next/standalone /app
+COPY --from=nextjs-builder /app/.next/static /app/.next/static
+COPY --from=nextjs-builder /app/public /app/public
+
+# Copy Drizzle files for migrations
+COPY --from=nextjs-builder /app/node_modules /app/node_modules
+COPY drizzle.config.ts /app/
+COPY drizzle /app/drizzle
+COPY src/server/db /app/src/server/db
+COPY package.json /app/
 
 # Copy configuration files
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Copy landing page and nginx configuration
-COPY public /var/www/html
-COPY nginx.conf /etc/nginx/sites-available/default
-
 # Environment variables
 ENV DISPLAY=:5
 ENV VNC_PASSWORD=obsidian
 ENV SCREEN_RESOLUTION=1280x720x24
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
-# Expose VNC and HTTP ports
-EXPOSE 5900 80
+# Expose VNC and Next.js ports
+EXPOSE 5900 3000
 
 # Volume for vault storage, Obsidian config, and persistent data
 VOLUME ["/home/obsidian/vault", "/home/obsidian/.config/obsidian", "/data"]
