@@ -63,33 +63,37 @@ The manifest configures the share target to accept:
 - `title` - Shared content title
 - `text` - Shared text content
 - `url` - Shared URL
+- `media` - Shared files (images, audio, video, PDFs)
+
+### Key Share Target Files
+
+| File | Purpose |
+|------|---------|
+| `src/app/share/route.ts` | POST handler for file uploads |
+| `src/lib/share-store.ts` | Temporary in-memory storage for shared data |
 
 ### Modifying Share Behavior
 
 To change how shared content is processed:
-1. Update `src/components/share-page.tsx` for authenticated handling
-2. The share data is passed via URL query parameters
-3. Authentication check happens in `src/app/share/page.tsx`
+1. Update `src/components/share-page.tsx` for authenticated file/content display
+2. Update `src/app/share/route.ts` to modify file processing
+3. The share data is stored temporarily and retrieved by ID
+4. Authentication check happens in `src/app/share/page.tsx`
 
-### Adding File Sharing
+### File Sharing Implementation
 
-To accept shared files (images, documents), update `public/manifest.json`:
+The app accepts shared files via POST with multipart/form-data:
+- Files are converted to base64 data URLs for display
+- Maximum file size: 10MB per file
+- Supported types: images, audio, video, PDFs
+- Files are stored in memory with 5-minute expiry
+
+To modify accepted file types, update `public/manifest.json`:
 ```json
-"share_target": {
-  "action": "/share",
-  "method": "POST",
-  "enctype": "multipart/form-data",
-  "params": {
-    "title": "title",
-    "text": "text",
-    "url": "url",
-    "files": [
-      {
-        "name": "media",
-        "accept": ["image/*", "video/*"]
-      }
-    ]
+"files": [
+  {
+    "name": "media",
+    "accept": ["image/*", "audio/*", "video/*", "application/pdf"]
   }
-}
+]
 ```
-Then create a POST handler in `src/app/share/route.ts`.
