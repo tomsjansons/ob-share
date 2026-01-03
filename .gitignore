@@ -1,0 +1,8 @@
+# Environment files
+.env
+
+# Vault directory (contains user's notes)
+vault/
+
+# Local configuration
+*.local

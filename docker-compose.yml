@@ -1,0 +1,28 @@
+services:
+  obsidian:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        OBSIDIAN_VERSION: "1.7.7"
+    container_name: obsidian-sync
+    restart: unless-stopped
+    ports:
+      - "5900:5900"  # VNC port
+    volumes:
+      - ./vault:/home/obsidian/vault
+      - obsidian-config:/home/obsidian/.config/obsidian
+    environment:
+      - VNC_PASSWORD=${VNC_PASSWORD:-obsidian}
+      - SCREEN_RESOLUTION=${SCREEN_RESOLUTION:-1280x720x24}
+    # Required for GPU acceleration (optional)
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # Security settings for running Obsidian
+    security_opt:
+      - seccomp:unconfined
+    shm_size: '2gb'
+
+volumes:
+  obsidian-config:
+    name: obsidian-config
