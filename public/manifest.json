@@ -38,7 +38,36 @@
       "files": [
         {
           "name": "media",
-          "accept": ["image/*", "audio/*", "video/*", "application/pdf"]
+          "accept": [
+            "image/*",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "image/heic",
+            "image/heif",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".webp",
+            ".heic",
+            ".heif",
+            "audio/*",
+            "audio/mpeg",
+            "audio/wav",
+            "audio/ogg",
+            ".mp3",
+            ".wav",
+            ".ogg",
+            "video/*",
+            "video/mp4",
+            "video/webm",
+            ".mp4",
+            ".webm",
+            "application/pdf",
+            ".pdf"
+          ]
         }
       ]
     }
