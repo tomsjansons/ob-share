@@ -29,6 +29,8 @@ Instructions for AI agents working on this repository.
 | Architecture changes | Architecture |
 | Deployment changes | Deployment |
 | New issues/fixes | Troubleshooting |
+| PWA changes | Progressive Web App (PWA) |
+| Share target changes | Progressive Web App (PWA) > Web Share Target |
 
 ## Guidelines
 
@@ -37,3 +39,57 @@ Instructions for AI agents working on this repository.
 - Update version numbers when applicable
 - Remove outdated information
 - Test any commands or instructions you document
+
+## PWA and Share Target
+
+The app includes Progressive Web App functionality with Web Share Target API support.
+
+### Key PWA Files
+
+| File | Purpose |
+|------|---------|
+| `public/manifest.json` | PWA manifest with share_target configuration |
+| `public/icon-192.svg` | App icon (192x192) |
+| `public/icon-512.svg` | App icon (512x512) |
+| `next.config.ts` | PWA plugin configuration (@ducanh2912/next-pwa) |
+| `src/app/layout.tsx` | PWA meta tags and manifest link |
+| `src/app/share/page.tsx` | Share target handler (server component) |
+| `src/components/share-page.tsx` | Authenticated share view |
+| `src/components/share-login.tsx` | Unauthenticated share login prompt |
+
+### Share Target Parameters
+
+The manifest configures the share target to accept:
+- `title` - Shared content title
+- `text` - Shared text content
+- `url` - Shared URL
+
+### Modifying Share Behavior
+
+To change how shared content is processed:
+1. Update `src/components/share-page.tsx` for authenticated handling
+2. The share data is passed via URL query parameters
+3. Authentication check happens in `src/app/share/page.tsx`
+
+### Adding File Sharing
+
+To accept shared files (images, documents), update `public/manifest.json`:
+```json
+"share_target": {
+  "action": "/share",
+  "method": "POST",
+  "enctype": "multipart/form-data",
+  "params": {
+    "title": "title",
+    "text": "text",
+    "url": "url",
+    "files": [
+      {
+        "name": "media",
+        "accept": ["image/*", "video/*"]
+      }
+    ]
+  }
+}
+```
+Then create a POST handler in `src/app/share/route.ts`.
