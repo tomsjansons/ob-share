@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y \
     libpango-1.0-0 \
     libcairo2 \
     fonts-liberation \
+    nginx \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Obsidian version - can be overridden at build time
@@ -55,13 +56,17 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Copy landing page and nginx configuration
+COPY public /var/www/html
+COPY nginx.conf /etc/nginx/sites-available/default
+
 # Environment variables
 ENV DISPLAY=:5
 ENV VNC_PASSWORD=obsidian
 ENV SCREEN_RESOLUTION=1280x720x24
 
-# Expose VNC port
-EXPOSE 5900
+# Expose VNC and HTTP ports
+EXPOSE 5900 80
 
 # Volume for vault storage and Obsidian config
 VOLUME ["/home/obsidian/vault", "/home/obsidian/.config/obsidian"]
