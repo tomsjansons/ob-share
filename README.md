@@ -425,6 +425,7 @@ The PWA is configured in:
 
 - **502 errors / "App not listening":** The app has a 30-second grace period for startup. If you still see this error, check logs with `fly logs -a ob-share`
 - **Health check failures:** Verify the `/health` endpoint is accessible and returning 200
+- **HOSTNAME override:** Fly.io overrides the `HOSTNAME` environment variable with the machine ID. The `fly.toml` explicitly sets `HOSTNAME = "0.0.0.0"` to ensure Next.js binds to all interfaces
 
 ### Container Logs
 
