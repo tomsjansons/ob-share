@@ -187,6 +187,16 @@ On Fly.io, a persistent volume is mounted at `/data` with the following structur
 | 5900 | x11vnc (VNC) | TCP |
 | 3000 | Next.js (HTTP) | TCP |
 
+### Health Check Endpoint
+
+The application exposes a health check endpoint at `/health` for container orchestration and monitoring:
+
+| Endpoint | Method | Response |
+|----------|--------|----------|
+| `/health` | GET | `{"status": "ok"}` (200 OK) |
+
+This endpoint is used by Fly.io for health checks with a 30-second grace period to allow time for database migrations and service startup.
+
 ### Allow List
 
 The application uses a GitHub username allow list to restrict access. Initial users are seeded in the database during container startup. Currently, the allow list contains:
@@ -376,6 +386,11 @@ The PWA is configured in:
 
 - **Resolution problems:** Adjust `SCREEN_RESOLUTION` in `.env`
 - **Format:** `WIDTHxHEIGHTxCOLOR_DEPTH` (e.g., `1920x1080x24`)
+
+### Fly.io Deployment Issues
+
+- **502 errors / "App not listening":** The app has a 30-second grace period for startup. If you still see this error, check logs with `fly logs -a ob-share`
+- **Health check failures:** Verify the `/health` endpoint is accessible and returning 200
 
 ### Container Logs
 
