@@ -123,6 +123,7 @@ The app saves shared content to the Obsidian vault automatically.
 Notes include YAML frontmatter with these fields:
 - `location`: String describing share location (country, city, area, street)
 - `created`: ISO 8601 timestamp
+- `status`: String indicating note status (defaults to "new")
 - `tags`: Array of strings (empty by default)
 - `projects`: Array of strings (empty by default)
 

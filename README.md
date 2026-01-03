@@ -386,6 +386,7 @@ The note includes YAML frontmatter with metadata:
 ---
 location: "country, city, area, street"  # From geolocation (if available)
 created: 2024-01-15T10:30:00.000Z
+status: "new"
 tags: []
 projects: []
 ---

@@ -15,6 +15,7 @@ export interface LocationInfo {
 export interface VaultNoteFrontmatter {
   location: LocationInfo;
   created: string;
+  status: string;
   tags: string[];
   projects: string[];
 }
@@ -96,6 +97,7 @@ function generateFrontmatter(options: {
     "---",
     `location: "${formatLocation(location)}"`,
     `created: ${created.toISOString()}`,
+    `status: "new"`,
     `tags: [${tags.map(t => `"${t}"`).join(", ")}]`,
     `projects: [${projects.map(p => `"${p}"`).join(", ")}]`,
     "---",
