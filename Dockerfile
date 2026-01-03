@@ -1,5 +1,8 @@
 # Stage 1: Build Next.js application
-FROM node:20-alpine AS nextjs-builder
+FROM node:20-slim AS nextjs-builder
+
+# Install build dependencies for native modules
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
