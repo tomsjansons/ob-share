@@ -22,9 +22,9 @@ primary_region = 'arn'
   initial_size = '1gb'
 
 [[vm]]
-  memory = '384mb'
+  memory = '256mb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 384
+  memory_mb = 256
   count = 1
 
