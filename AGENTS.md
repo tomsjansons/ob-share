@@ -88,12 +88,17 @@ The app accepts shared files via POST with multipart/form-data:
 - Supported types: images, audio, video, PDFs
 - Files are stored in memory with 5-minute expiry
 
-To modify accepted file types, update `public/manifest.json`:
+To modify accepted file types, update `public/manifest.json`. Include both MIME types and file extensions for reliable cross-device compatibility:
 ```json
 "files": [
   {
     "name": "media",
-    "accept": ["image/*", "audio/*", "video/*", "application/pdf"]
+    "accept": [
+      "image/*", "image/jpeg", "image/png", ".jpg", ".png",
+      "audio/*", "audio/mpeg", ".mp3",
+      "video/*", "video/mp4", ".mp4",
+      "application/pdf", ".pdf"
+    ]
   }
 ]
 ```
