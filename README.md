@@ -151,7 +151,7 @@ The project is configured for Fly.io deployment with the following specification
 | App Name | `ob-share` |
 | Region | `arn` (Dublin, Ireland) |
 | CPU | 1 shared core |
-| Memory | 1 GB |
+| Memory | 384 MB |
 | Volume | 1 GB persistent storage |
 | Auto-scaling | Enabled (auto-stop/start) |
 
