@@ -167,21 +167,50 @@ Pushes to the `main` branch trigger automatic deployment via GitHub Actions.
 
 #### Manual Deployment
 
-```bash
-# Install Fly CLI
-curl -L https://fly.io/install.sh | sh
+1. **Install Fly CLI:**
+   ```bash
+   curl -L https://fly.io/install.sh | sh
+   ```
 
-# Authenticate
-flyctl auth login
+2. **Authenticate:**
+   ```bash
+   flyctl auth login
+   ```
 
-# Create the persistent volume (first time only)
-flyctl volumes create obsidian_data --region arn --size 1
+3. **Create the persistent volume (first time only):**
+   ```bash
+   flyctl volumes create obsidian_data --region arn --size 1
+   ```
+   This creates a 1GB volume for storing Obsidian config and documents.
 
-# Deploy
-flyctl deploy --remote-only --ha=false
-```
+4. **Deploy the application:**
+   ```bash
+   flyctl deploy --remote-only --ha=false
+   ```
 
 **Note:** The volume must be created before the first deployment. Subsequent deployments will reuse the existing volume.
+
+#### Connecting via VNC
+
+Since VNC (port 5900) is not exposed publicly, use `fly proxy` to create a secure tunnel:
+
+1. **Start the proxy:**
+   ```bash
+   fly proxy 5900:5900 -a ob-share
+   ```
+
+2. **Connect with your VNC client:**
+   - Open your VNC viewer (TigerVNC, RealVNC, etc.)
+   - Connect to `localhost:5900`
+   - Enter the VNC password (default: `obsidian`)
+
+3. **Set up Obsidian (first time):**
+   - Once connected, Obsidian will be running in the virtual display
+   - Click "Open folder as vault" and select `/home/obsidian/Documents`
+   - Log in with your Obsidian account (if using Obsidian Sync)
+   - Enable Obsidian Sync to synchronize your notes across devices
+
+Your Obsidian settings and documents are persisted in the Fly.io volume, so they survive restarts and redeployments.
 
 ### Docker Hub / Custom Registry
 
