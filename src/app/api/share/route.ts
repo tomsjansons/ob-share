@@ -8,6 +8,11 @@ import {
 // Maximum file size: 10MB
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
+// Get the base URL for redirects - use BETTER_AUTH_URL to avoid 0.0.0.0 issues
+function getBaseUrl(): string {
+  return process.env.BETTER_AUTH_URL || "http://localhost:3000";
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -54,7 +59,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Redirect to the share page with the ID
-    const redirectUrl = new URL("/share", request.url);
+    const baseUrl = getBaseUrl();
+    const redirectUrl = new URL("/share", baseUrl);
     redirectUrl.searchParams.set("id", shareId);
 
     // Also pass text params as fallback for backwards compatibility
@@ -65,7 +71,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(redirectUrl, { status: 303 });
   } catch (error) {
     console.error("Error processing share request:", error);
-    return NextResponse.redirect(new URL("/share?error=processing", request.url), {
+    const baseUrl = getBaseUrl();
+    return NextResponse.redirect(new URL("/share?error=processing", baseUrl), {
       status: 303,
     });
   }
