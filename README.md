@@ -91,10 +91,23 @@ ob-share/
 
 ### Volumes
 
+#### Local Development (Docker Compose)
+
 | Local Path | Container Path | Purpose |
 |------------|----------------|---------|
 | `./vault` | `/home/obsidian/vault` | Your Obsidian notes (synced) |
 | `obsidian-config` (named volume) | `/home/obsidian/.config/obsidian` | Obsidian settings and sync data |
+
+#### Fly.io Deployment (Persistent Volume)
+
+On Fly.io, a persistent volume is mounted at `/data` with the following structure:
+
+| Volume Path | Symlinked To | Purpose |
+|-------------|--------------|---------|
+| `/data/Documents` | `/home/obsidian/Documents` | Persistent document storage |
+| `/data/obsidian-config` | `/home/obsidian/.config/obsidian` | Obsidian settings and sync data |
+
+The volume is automatically configured during deployment. Data persists across container restarts and redeployments.
 
 ### Port Mappings
 
@@ -139,6 +152,7 @@ The project is configured for Fly.io deployment with the following specification
 | Region | `arn` (Dublin, Ireland) |
 | CPU | 1 shared core |
 | Memory | 1 GB |
+| Volume | 1 GB persistent storage |
 | Auto-scaling | Enabled (auto-stop/start) |
 
 #### Automatic Deployment (CI/CD)
@@ -160,9 +174,14 @@ curl -L https://fly.io/install.sh | sh
 # Authenticate
 flyctl auth login
 
+# Create the persistent volume (first time only)
+flyctl volumes create obsidian_data --region arn --size 1
+
 # Deploy
 flyctl deploy --remote-only --ha=false
 ```
+
+**Note:** The volume must be created before the first deployment. Subsequent deployments will reuse the existing volume.
 
 ### Docker Hub / Custom Registry
 

@@ -1,6 +1,46 @@
 #!/bin/bash
 set -e
 
+# Set up persistent volume (Fly.io)
+# When /data is a mounted volume, set up directory structure and symlinks
+if mountpoint -q /data 2>/dev/null; then
+    echo "Fly.io volume detected at /data, setting up persistent storage..."
+
+    # Create subdirectories in the volume
+    mkdir -p /data/Documents
+    mkdir -p /data/obsidian-config
+    chown -R obsidian:obsidian /data
+
+    # Set up Documents symlink
+    if [ -d /home/obsidian/Documents ] && [ ! -L /home/obsidian/Documents ]; then
+        # Move any existing content to volume
+        if [ "$(ls -A /home/obsidian/Documents 2>/dev/null)" ]; then
+            cp -rn /home/obsidian/Documents/* /data/Documents/ 2>/dev/null || true
+        fi
+        rm -rf /home/obsidian/Documents
+    fi
+    if [ ! -L /home/obsidian/Documents ]; then
+        ln -s /data/Documents /home/obsidian/Documents
+        echo "Linked /home/obsidian/Documents -> /data/Documents"
+    fi
+
+    # Set up Obsidian config symlink
+    if [ -d /home/obsidian/.config/obsidian ] && [ ! -L /home/obsidian/.config/obsidian ]; then
+        # Move any existing content to volume
+        if [ "$(ls -A /home/obsidian/.config/obsidian 2>/dev/null)" ]; then
+            cp -rn /home/obsidian/.config/obsidian/* /data/obsidian-config/ 2>/dev/null || true
+        fi
+        rm -rf /home/obsidian/.config/obsidian
+    fi
+    if [ ! -L /home/obsidian/.config/obsidian ]; then
+        ln -s /data/obsidian-config /home/obsidian/.config/obsidian
+        echo "Linked /home/obsidian/.config/obsidian -> /data/obsidian-config"
+    fi
+
+    chown -h obsidian:obsidian /home/obsidian/Documents
+    chown -h obsidian:obsidian /home/obsidian/.config/obsidian
+fi
+
 # Set up VNC password
 if [ ! -f /home/obsidian/.vnc/passwd ]; then
     echo "Setting up VNC password..."
@@ -12,7 +52,9 @@ fi
 # Ensure proper ownership of directories
 chown -R obsidian:obsidian /home/obsidian/.vnc
 chown -R obsidian:obsidian /home/obsidian/vault
-chown -R obsidian:obsidian /home/obsidian/.config/obsidian
+if [ ! -L /home/obsidian/.config/obsidian ]; then
+    chown -R obsidian:obsidian /home/obsidian/.config/obsidian
+fi
 
 # Parse screen resolution
 SCREEN_WIDTH=$(echo $SCREEN_RESOLUTION | cut -d'x' -f1)
