@@ -47,10 +47,12 @@ ob-share/
 │   ├── app/                # Next.js App Router pages
 │   │   ├── page.tsx        # Landing page (logged out)
 │   │   ├── account/        # Account page (logged in)
-│   │   ├── share/          # Web Share Target handler
-│   │   │   ├── page.tsx    # Share page (GET, displays content)
-│   │   │   └── route.ts    # Share handler (POST, processes files)
-│   │   └── api/            # API routes (auth, tRPC)
+│   │   ├── share/          # Web Share Target display
+│   │   │   └── page.tsx    # Share page (displays & saves content)
+│   │   └── api/            # API routes
+│   │       ├── auth/       # Authentication endpoints
+│   │       ├── share/      # Share target POST handler
+│   │       └── trpc/       # tRPC API endpoints
 │   ├── components/         # React components
 │   │   ├── share-page.tsx  # Share target authenticated view
 │   │   ├── share-login.tsx # Share target login prompt
@@ -59,10 +61,11 @@ ob-share/
 │   │   ├── auth.ts         # Better Auth configuration
 │   │   ├── auth-client.ts  # Client-side auth
 │   │   ├── share-store.ts  # Temporary storage for shared files
+│   │   ├── vault.ts        # Obsidian vault file operations
 │   │   └── trpc/           # tRPC client/provider
 │   └── server/
 │       ├── db/             # Database schema and connection
-│       └── trpc/           # tRPC routers
+│       └── trpc/           # tRPC routers (user, vault)
 ├── drizzle/                # Database migrations
 ├── public/
 │   ├── manifest.json       # PWA manifest with share target
@@ -158,6 +161,7 @@ pnpm dev
 | `VNC_PASSWORD` | `obsidian` | Password for VNC remote access |
 | `SCREEN_RESOLUTION` | `1280x720x24` | Virtual display resolution |
 | `DATABASE_URL` | `./data/ob-share.db` | SQLite database path |
+| `VAULT_ROOT` | `/home/obsidian/vault` | Path to Obsidian vault root |
 | `BETTER_AUTH_SECRET` | (required) | Secret for session encryption |
 | `BETTER_AUTH_URL` | `http://localhost:3000` | Base URL for auth callbacks |
 | `GITHUB_CLIENT_ID` | (required) | GitHub OAuth client ID |
@@ -368,8 +372,29 @@ When installed as a PWA, ob-share appears as a share target in Android's share m
 
 1. Share content from any app → Select "ob-share"
 2. If not logged in → Login prompt appears (share data preserved)
-3. After authentication → Shared content is displayed
-4. Implement custom handling in `src/components/share-page.tsx`
+3. After authentication → Shared content is displayed and automatically saved to vault
+4. Content is saved as a markdown file in the `incoming/` folder
+
+### Vault Integration
+
+Shared content is automatically saved to your Obsidian vault when received. Each share creates:
+
+**Markdown Note:** `{vault}/incoming/{date}-{time}-{name}.md`
+
+The note includes YAML frontmatter with metadata:
+```yaml
+---
+location: "country, city, area, street"  # From geolocation (if available)
+created: 2024-01-15T10:30:00.000Z
+status: "new"
+tags: []
+projects: []
+---
+```
+
+**Attachments:** Non-text files (images, audio, video, PDFs) are saved alongside the note and linked using Obsidian's wiki-link syntax:
+- Images: `![[filename.jpg]]` (embedded)
+- Other files: `[[filename.pdf]]` (linked)
 
 ### PWA Configuration
 
