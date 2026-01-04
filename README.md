@@ -28,6 +28,7 @@ This project provides a cloud-based, containerized Obsidian installation that:
 | Database | SQLite + Drizzle ORM | User data and sessions |
 | UI | shadcn/ui + Tailwind CSS | Component library |
 | Process Manager | supervisord | Service orchestration |
+| Logging | Pino | Structured JSON logging |
 | Application | Obsidian v1.7.7 | Note-taking app |
 
 ## Project Structure
@@ -176,6 +177,7 @@ pnpm dev
 | `BETTER_AUTH_URL` | `http://localhost:3000` | Base URL for auth callbacks |
 | `GITHUB_CLIENT_ID` | (required) | GitHub OAuth client ID |
 | `GITHUB_CLIENT_SECRET` | (required) | GitHub OAuth client secret |
+| `LOG_LEVEL` | `debug` (dev) / `info` (prod) | Logging level (trace, debug, info, warn, error, fatal) |
 
 **Note:** Vault path configuration has moved to in-app settings. See [Vault Settings](#vault-settings) below.
 

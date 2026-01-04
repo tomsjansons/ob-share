@@ -9,6 +9,7 @@
 import { db } from "../db";
 import { jobPhases } from "../db/schema";
 import { eq, and } from "drizzle-orm";
+import { logger as baseLogger } from "@/lib/logger";
 import type {
   JobDefinition,
   JobRecord,
@@ -16,6 +17,9 @@ import type {
   PhaseContext,
   PhaseResult,
 } from "./types";
+
+// Module logger for task runner
+const logger = baseLogger.child({ module: "task-runner" });
 
 interface ExecutionResult {
   success: boolean;
@@ -210,13 +214,48 @@ export class TaskRunner {
     // Mark phase as running
     await this.updatePhaseStatus(phaseRecord.id, "running");
 
+    logger.debug({
+      event: "phase.started",
+      jobId: context.job.id,
+      jobType: context.job.type,
+      phaseId: phaseRecord.id,
+      phaseName: phaseRecord.name,
+      phaseOrder: phaseRecord.order,
+      retryCount: phaseRecord.retryCount,
+    }, "Phase started");
+
     try {
       // Execute the phase
       const result = await phaseDefinition.execute(context);
+
+      if (result.success) {
+        logger.debug({
+          event: "phase.completed",
+          jobId: context.job.id,
+          phaseId: phaseRecord.id,
+          phaseName: phaseRecord.name,
+        }, "Phase completed successfully");
+      } else {
+        logger.warn({
+          event: "phase.failed",
+          jobId: context.job.id,
+          phaseId: phaseRecord.id,
+          phaseName: phaseRecord.name,
+          error: result.error,
+          shouldRetry: result.shouldRetry,
+        }, "Phase failed");
+      }
+
       return result;
     } catch (err) {
       // Check if cancellation
       if (signal.aborted) {
+        logger.info({
+          event: "phase.cancelled",
+          jobId: context.job.id,
+          phaseId: phaseRecord.id,
+          phaseName: phaseRecord.name,
+        }, "Phase cancelled");
         return {
           success: false,
           error: "Phase cancelled",
@@ -225,6 +264,13 @@ export class TaskRunner {
       }
 
       const error = err instanceof Error ? err.message : String(err);
+      logger.error({
+        event: "phase.error",
+        jobId: context.job.id,
+        phaseId: phaseRecord.id,
+        phaseName: phaseRecord.name,
+        err,
+      }, "Phase threw unexpected error");
       return {
         success: false,
         error,

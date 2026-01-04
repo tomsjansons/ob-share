@@ -11,7 +11,11 @@
 import { QueueHandler, getAliveHandlers, cleanupDeadHandlers } from "./queue-handler";
 import { JobRegistry } from "./registry";
 import { cleanupOldJobs, getHandlerHealth, getQueueStats } from "./job-service";
+import { logger as baseLogger } from "@/lib/logger";
 import type { QueueEventHandler } from "./types";
+
+// Module logger for scheduler
+const logger = baseLogger.child({ module: "queue-scheduler" });
 
 /**
  * Default interval: 30 minutes in milliseconds
@@ -107,14 +111,12 @@ export class QueueScheduler {
    */
   start(): void {
     if (this.status.isRunning) {
-      console.warn("Scheduler is already running");
+      logger.warn({ event: "scheduler.already_running" }, "Scheduler is already running");
       return;
     }
 
     this.status.isRunning = true;
-    console.log(
-      `Queue scheduler started. Interval: ${this.config.intervalMs / 1000}s`
-    );
+    logger.info({ event: "scheduler.started", intervalMs: this.config.intervalMs }, "Queue scheduler started");
 
     // Schedule next run
     this.scheduleNextRun();
@@ -130,7 +132,7 @@ export class QueueScheduler {
     // Run immediately if configured
     if (this.config.runOnStart) {
       this.triggerProcessing().catch((err) => {
-        console.error("Error during initial processing:", err);
+        logger.error({ event: "scheduler.initial_processing_error", err }, "Error during initial processing");
       });
     }
   }
@@ -143,7 +145,7 @@ export class QueueScheduler {
       return;
     }
 
-    console.log("Queue scheduler stopping...");
+    logger.info({ event: "scheduler.stopping" }, "Queue scheduler stopping");
 
     // Clear timers
     if (this.intervalTimer) {
@@ -164,7 +166,7 @@ export class QueueScheduler {
 
     this.status.isRunning = false;
     this.status.nextRun = null;
-    console.log("Queue scheduler stopped");
+    logger.info({ event: "scheduler.stopped", totalRuns: this.status.totalRuns, totalJobsProcessed: this.status.totalJobsProcessed }, "Queue scheduler stopped");
   }
 
   /**
@@ -224,9 +226,7 @@ export class QueueScheduler {
       this.status.totalRuns++;
       this.status.totalJobsProcessed += jobsProcessed;
 
-      console.log(
-        `Queue processing completed. Jobs: ${jobsProcessed}, Duration: ${duration}ms`
-      );
+      logger.info({ event: "scheduler.processing_completed", jobsProcessed, durationMs: duration }, "Queue processing completed");
 
       return { success: true, jobsProcessed, duration };
     } catch (err) {
@@ -239,7 +239,7 @@ export class QueueScheduler {
         this.status.errors.shift();
       }
 
-      console.error("Queue processing error:", error);
+      logger.error({ event: "scheduler.processing_error", error, durationMs: duration, err }, "Queue processing error");
 
       // Clean up handler
       if (this.handler) {
@@ -325,7 +325,7 @@ export class QueueScheduler {
 
     this.intervalTimer = setTimeout(() => {
       this.triggerProcessing().catch((err) => {
-        console.error("Error during scheduled processing:", err);
+        logger.error({ event: "scheduler.scheduled_processing_error", err }, "Error during scheduled processing");
       });
     }, this.config.intervalMs);
   }
@@ -335,21 +335,21 @@ export class QueueScheduler {
    */
   private async runCleanup(): Promise<void> {
     try {
-      console.log("Running queue cleanup...");
+      logger.debug({ event: "scheduler.cleanup_started" }, "Running queue cleanup");
 
       // Clean up dead handlers
       const deadHandlers = await cleanupDeadHandlers();
       if (deadHandlers > 0) {
-        console.log(`Cleaned up ${deadHandlers} dead handlers`);
+        logger.info({ event: "scheduler.cleanup_handlers", count: deadHandlers }, "Cleaned up dead handlers");
       }
 
       // Clean up old jobs
       const oldJobs = await cleanupOldJobs(this.config.cleanupOlderThanDays);
       if (oldJobs > 0) {
-        console.log(`Cleaned up ${oldJobs} old jobs`);
+        logger.info({ event: "scheduler.cleanup_jobs", count: oldJobs, olderThanDays: this.config.cleanupOlderThanDays }, "Cleaned up old jobs");
       }
     } catch (err) {
-      console.error("Cleanup error:", err);
+      logger.error({ event: "scheduler.cleanup_error", err }, "Cleanup error");
     }
   }
 }

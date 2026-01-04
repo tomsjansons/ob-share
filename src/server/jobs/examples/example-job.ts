@@ -6,7 +6,11 @@
  */
 
 import { defineJob, JobPriority } from "../index";
+import { logger as baseLogger } from "@/lib/logger";
 import type { PhaseDefinition } from "../types";
+
+// Module logger for example job
+const logger = baseLogger.child({ module: "example-job" });
 
 /**
  * Example payload type
@@ -31,7 +35,7 @@ export const exampleJob = defineJob<ExamplePayload>({
     {
       name: "validate",
       async execute(ctx) {
-        console.log(`[${ctx.job.id}] Validating: ${ctx.job.payload.message}`);
+        logger.debug({ event: "example.validate", jobId: ctx.job.id }, "Validating input");
 
         // Simulate validation
         if (!ctx.job.payload.message) {
@@ -52,7 +56,7 @@ export const exampleJob = defineJob<ExamplePayload>({
     {
       name: "process",
       async execute(ctx) {
-        console.log(`[${ctx.job.id}] Processing...`);
+        logger.debug({ event: "example.process", jobId: ctx.job.id }, "Processing");
 
         // Simulate processing
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -76,7 +80,7 @@ export const exampleJob = defineJob<ExamplePayload>({
       name: "finalize",
       async execute(ctx) {
         const input = ctx.phase.input as { result?: string } | null;
-        console.log(`[${ctx.job.id}] Finalizing: ${input?.result}`);
+        logger.debug({ event: "example.finalize", jobId: ctx.job.id }, "Finalizing");
 
         // Simulate finalization
         await new Promise((resolve) => setTimeout(resolve, 50));
@@ -102,12 +106,12 @@ export const exampleJob = defineJob<ExamplePayload>({
   },
 
   // Called when the job completes successfully
-  async onComplete(job, result) {
-    console.log(`Example job ${job.id} completed with result:`, result);
+  async onComplete(job) {
+    logger.info({ event: "example.completed", jobId: job.id }, "Example job completed");
   },
 
   // Called when the job fails after all retries
   async onFailed(job, error) {
-    console.error(`Example job ${job.id} failed:`, error);
+    logger.error({ event: "example.failed", jobId: job.id, error }, "Example job failed");
   },
 });

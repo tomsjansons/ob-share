@@ -13,6 +13,7 @@ import { randomUUID } from "crypto";
 import { db } from "../db";
 import { jobs, jobPhases, queueHandlerHeartbeat, queueLock } from "../db/schema";
 import { eq, and, lte, or, sql, isNull, asc } from "drizzle-orm";
+import { logger as baseLogger } from "@/lib/logger";
 import type {
   QueueHandlerConfig,
   QueueStats,
@@ -23,6 +24,9 @@ import type {
 } from "./types";
 import { DEFAULT_QUEUE_CONFIG } from "./types";
 import { TaskRunner } from "./task-runner";
+
+// Module logger for queue handler
+const logger = baseLogger.child({ module: "queue-handler" });
 
 /**
  * Queue Handler manages the lifecycle of background job processing.
@@ -79,10 +83,10 @@ export class QueueHandler {
       try {
         const result = handler(event);
         if (result instanceof Promise) {
-          result.catch((err) => console.error("Event handler error:", err));
+          result.catch((err) => logger.error({ event: "queue.event.error", err, eventType: event.type }, "Event handler error"));
         }
       } catch (err) {
-        console.error("Event handler error:", err);
+        logger.error({ event: "queue.event.error", err, eventType: event.type }, "Event handler error");
       }
     }
   }
@@ -92,7 +96,7 @@ export class QueueHandler {
    */
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.warn("Queue handler is already running");
+      logger.warn({ event: "queue.handler.already_running", handlerId: this.config.handlerId }, "Queue handler is already running");
       return;
     }
 
@@ -111,7 +115,7 @@ export class QueueHandler {
     // Emit start event
     this.emit({ type: "handler:started", handlerId: this.config.handlerId });
 
-    console.log(`Queue handler ${this.config.handlerId} started`);
+    logger.info({ event: "queue.handler.started", handlerId: this.config.handlerId }, "Queue handler started");
 
     // Start polling
     await this.poll();
@@ -126,7 +130,7 @@ export class QueueHandler {
     }
 
     this.isStopping = true;
-    console.log(`Queue handler ${this.config.handlerId} stopping...`);
+    logger.info({ event: "queue.handler.stopping", handlerId: this.config.handlerId }, "Queue handler stopping");
 
     // Stop polling
     if (this.pollTimer) {
@@ -142,7 +146,7 @@ export class QueueHandler {
 
     // Cancel all running jobs
     for (const [jobId, controller] of this.currentJobs) {
-      console.log(`Cancelling job ${jobId}`);
+      logger.info({ event: "job.cancelling", jobId, handlerId: this.config.handlerId }, "Cancelling job");
       controller.abort();
     }
 
@@ -159,7 +163,7 @@ export class QueueHandler {
     this.isStopping = false;
 
     this.emit({ type: "handler:stopped", handlerId: this.config.handlerId });
-    console.log(`Queue handler ${this.config.handlerId} stopped`);
+    logger.info({ event: "queue.handler.stopped", handlerId: this.config.handlerId, jobsProcessed: this.stats.jobsProcessed, jobsFailed: this.stats.jobsFailed }, "Queue handler stopped");
   }
 
   /**
@@ -195,7 +199,7 @@ export class QueueHandler {
     try {
       await this.processPendingJobs();
     } catch (err) {
-      console.error("Error during poll:", err);
+      logger.error({ event: "queue.poll.error", err, handlerId: this.config.handlerId }, "Error during poll");
     }
 
     // Schedule next poll
@@ -245,7 +249,7 @@ export class QueueHandler {
         processedCount++;
         // Process job in background (don't await)
         this.processJob(job as JobRecord).catch((err) => {
-          console.error(`Error processing job ${job.id}:`, err);
+          logger.error({ event: "job.process.error", jobId: job.id, jobType: job.type, err }, "Error processing job");
         });
       }
     }
@@ -367,13 +371,15 @@ export class QueueHandler {
     this.stats.jobsProcessed++;
     this.emit({ type: "job:completed", job, result });
 
+    logger.info({ event: "job.completed", jobId: job.id, jobType: job.type, handlerId: this.config.handlerId }, "Job completed");
+
     // Call onComplete hook
     const definition = this.jobDefinitions.get(job.type);
     if (definition?.onComplete) {
       try {
         await definition.onComplete(job, result);
       } catch (err) {
-        console.error(`Error in onComplete hook for job ${job.id}:`, err);
+        logger.error({ event: "job.hook.error", jobId: job.id, hook: "onComplete", err }, "Error in onComplete hook");
       }
     }
   }
@@ -405,6 +411,7 @@ export class QueueHandler {
         })
         .where(eq(jobs.id, job.id));
 
+      logger.info({ event: "job.retrying", jobId: job.id, jobType: job.type, attempt: newRetryCount, maxRetries: job.maxRetries, backoffMs }, "Job scheduled for retry");
       this.emit({ type: "job:retrying", job, attempt: newRetryCount });
     } else {
       // Max retries reached, mark as failed
@@ -421,13 +428,15 @@ export class QueueHandler {
       this.stats.jobsFailed++;
       this.emit({ type: "job:failed", job, error });
 
+      logger.error({ event: "job.failed", jobId: job.id, jobType: job.type, error, retryCount: newRetryCount }, "Job failed after max retries");
+
       // Call onFailed hook
       const definition = this.jobDefinitions.get(job.type);
       if (definition?.onFailed) {
         try {
           await definition.onFailed(job, error);
         } catch (err) {
-          console.error(`Error in onFailed hook for job ${job.id}:`, err);
+          logger.error({ event: "job.hook.error", jobId: job.id, hook: "onFailed", err }, "Error in onFailed hook");
         }
       }
     }
@@ -456,7 +465,7 @@ export class QueueHandler {
       .returning({ id: jobs.id });
 
     if (stalledJobs.length > 0) {
-      console.warn(`Found ${stalledJobs.length} stalled jobs`);
+      logger.warn({ event: "queue.stalled_jobs", count: stalledJobs.length, jobIds: stalledJobs.map(j => j.id) }, "Found stalled jobs");
     }
   }
 
@@ -546,7 +555,7 @@ export class QueueHandler {
 
     // Send initial heartbeat
     this.sendHeartbeat().catch((err) => {
-      console.error("Error sending initial heartbeat:", err);
+      logger.error({ event: "queue.heartbeat.error", handlerId: this.config.handlerId, err }, "Error sending initial heartbeat");
     });
   }
 

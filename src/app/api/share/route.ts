@@ -4,6 +4,7 @@ import {
   storeSharedData,
   SharedFile,
 } from "@/lib/share-store";
+import { createLogger, sanitizeFileForLogging } from "@/lib/logger";
 
 // Maximum file size: 10MB
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -13,24 +14,60 @@ function getBaseUrl(): string {
   return process.env.BETTER_AUTH_URL || "http://localhost:3000";
 }
 
+// Generate a unique request ID
+function generateRequestId(): string {
+  return `share_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
+
 export async function POST(request: NextRequest) {
+  const requestId = generateRequestId();
+  const logger = createLogger({ requestId, endpoint: "/api/share" });
+  const startTime = Date.now();
+
+  logger.info({
+    event: "share.request.start",
+    method: "POST",
+    userAgent: request.headers.get("user-agent"),
+  });
+
   try {
     const formData = await request.formData();
 
-    // Extract text fields
+    // Extract text fields (don't log actual content)
     const title = formData.get("title")?.toString() || "";
     const text = formData.get("text")?.toString() || "";
     const url = formData.get("url")?.toString() || "";
 
+    logger.debug({
+      event: "share.request.parsed",
+      hasTitle: Boolean(title),
+      hasTitleLength: title.length,
+      hasText: Boolean(text),
+      hasTextLength: text.length,
+      hasUrl: Boolean(url),
+    });
+
     // Extract files - they come as "media" from the share target
     const files: SharedFile[] = [];
     const mediaFiles = formData.getAll("media");
+    let skippedFileCount = 0;
+
+    logger.debug({
+      event: "share.request.files_received",
+      totalFiles: mediaFiles.length,
+    });
 
     for (const file of mediaFiles) {
       if (file instanceof File && file.size > 0) {
         // Check file size
         if (file.size > MAX_FILE_SIZE) {
-          console.warn(`File ${file.name} exceeds max size, skipping`);
+          logger.warn({
+            event: "share.request.file_skipped",
+            reason: "exceeds_max_size",
+            file: sanitizeFileForLogging({ name: file.name, type: file.type, size: file.size }),
+            maxSize: MAX_FILE_SIZE,
+          });
+          skippedFileCount++;
           continue;
         }
 
@@ -45,6 +82,11 @@ export async function POST(request: NextRequest) {
           size: file.size,
           dataUrl,
         });
+
+        logger.debug({
+          event: "share.request.file_processed",
+          file: sanitizeFileForLogging({ name: file.name, type: file.type, size: file.size }),
+        });
       }
     }
 
@@ -56,6 +98,15 @@ export async function POST(request: NextRequest) {
       url,
       files,
       createdAt: Date.now(),
+    });
+
+    const durationMs = Date.now() - startTime;
+    logger.info({
+      event: "share.request.complete",
+      shareId,
+      filesProcessed: files.length,
+      filesSkipped: skippedFileCount,
+      durationMs,
     });
 
     // Redirect to the share page with the ID
@@ -70,7 +121,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.redirect(redirectUrl, { status: 303 });
   } catch (error) {
-    console.error("Error processing share request:", error);
+    const durationMs = Date.now() - startTime;
+    logger.error({
+      event: "share.request.error",
+      error: error instanceof Error ? error.message : "Unknown error",
+      durationMs,
+    });
+
     const baseUrl = getBaseUrl();
     return NextResponse.redirect(new URL("/share?error=processing", baseUrl), {
       status: 303,
