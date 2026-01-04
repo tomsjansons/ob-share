@@ -68,7 +68,15 @@ ob-share/
 │   │   └── trpc/           # tRPC client/provider
 │   └── server/
 │       ├── db/             # Database schema and connection
-│       └── trpc/           # tRPC routers (user, vault, settings)
+│       ├── trpc/           # tRPC routers (user, vault, settings, queue)
+│       └── jobs/           # Async job queue system
+│           ├── types.ts    # Type definitions
+│           ├── base-job.ts # Base job class
+│           ├── queue-handler.ts # Queue polling and job execution
+│           ├── task-runner.ts   # Phase execution engine
+│           ├── scheduler.ts     # 30-min interval processing
+│           ├── job-service.ts   # Job CRUD operations
+│           └── examples/        # Example job implementations
 ├── drizzle/                # Database migrations
 ├── public/
 │   ├── manifest.json       # PWA manifest with share target
@@ -475,6 +483,117 @@ docker compose restart
 # Rebuild and restart
 docker compose up -d --build
 ```
+
+## Async Job Queue
+
+The application includes a robust async job queue system for handling background tasks with reliability and fault tolerance.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| Phase-based execution | Jobs are divided into idempotent phases that can be retried independently |
+| Visibility timeouts | Prevents duplicate processing when handlers fail |
+| Heartbeat monitoring | Detects dead handlers and recovers stalled jobs |
+| Automatic retries | Failed jobs retry with exponential backoff |
+| Manual triggering | Process queue on-demand via tRPC API |
+| Scheduled processing | Runs every 30 minutes by default |
+
+### Job Queue Architecture
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Job Service   │────▶│   Queue Handler  │────▶│   Task Runner   │
+│  (Create/Query) │     │  (Poll/Claim)    │     │ (Execute Phases)│
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                               │
+                               ▼
+                        ┌──────────────────┐
+                        │   Heartbeat      │
+                        │   (Health Check) │
+                        └──────────────────┘
+```
+
+### Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `jobs` | Main job queue with status, payload, and scheduling |
+| `job_phases` | Individual phases within a job with retry tracking |
+| `queue_handler_heartbeat` | Handler health monitoring |
+| `queue_lock` | Prevents concurrent queue processing |
+
+### Creating a Job
+
+```typescript
+import { createJob, JobPriority, JobRegistry } from "@/server/jobs";
+
+// Register your job type first
+JobRegistry.register(myJobDefinition);
+
+// Create a job
+const job = await createJob({
+  type: "my-job-type",
+  payload: { key: "value" },
+  priority: JobPriority.NORMAL,
+  maxRetries: 3,
+});
+```
+
+### Defining a Job Type
+
+```typescript
+import { defineJob, JobPriority } from "@/server/jobs";
+
+export const myJob = defineJob({
+  type: "my-job",
+  description: "Processes something in the background",
+  defaultPriority: JobPriority.NORMAL,
+  defaultMaxRetries: 3,
+
+  phases: [
+    {
+      name: "validate",
+      async execute(ctx) {
+        // Validation logic (must be idempotent)
+        return { success: true, output: { validated: true } };
+      },
+    },
+    {
+      name: "process",
+      async execute(ctx) {
+        // Main processing (must be idempotent)
+        return { success: true, output: { result: "done" } };
+      },
+    },
+  ],
+});
+```
+
+### tRPC Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `queue.getStats` | Get queue statistics (pending, processing, failed counts) |
+| `queue.getHealth` | Check handler health and queue backlog |
+| `queue.triggerProcessing` | Manually trigger queue processing |
+| `queue.listJobs` | List jobs with filters |
+| `queue.createJob` | Create a new job |
+| `queue.cancelJob` | Cancel a pending job |
+| `queue.retryJob` | Retry a failed job |
+
+### Scheduler Configuration
+
+The queue scheduler runs automatically with these defaults:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Interval | 30 minutes | Time between queue processing runs |
+| Visibility timeout | 5 minutes | Time before stalled jobs become visible again |
+| Heartbeat interval | 30 seconds | How often handlers send heartbeats |
+| Heartbeat timeout | 2 minutes | Time before a handler is considered dead |
+| Cleanup interval | 6 hours | How often old jobs are cleaned up |
+| Job retention | 7 days | How long completed/failed jobs are kept |
 
 ## Security Considerations
 

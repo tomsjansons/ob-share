@@ -162,3 +162,104 @@ Vault paths are now configured per-user via settings:
 - Full path: `/data/Documents/{vault-name}/{incoming-folder}/`
 - Settings created automatically on user signup
 - Settings can be modified anytime from the settings page
+
+## Async Job Queue
+
+The app includes a robust async job queue system for background task processing.
+
+### Key Job Queue Files
+
+| File | Purpose |
+|------|---------|
+| `src/server/jobs/types.ts` | Type definitions for jobs, phases, and configuration |
+| `src/server/jobs/base-job.ts` | Base class for defining job types |
+| `src/server/jobs/queue-handler.ts` | Polls queue, manages visibility timeouts, sends heartbeats |
+| `src/server/jobs/task-runner.ts` | Executes job phases sequentially with retry support |
+| `src/server/jobs/scheduler.ts` | Runs queue processing every 30 minutes |
+| `src/server/jobs/job-service.ts` | CRUD operations for jobs |
+| `src/server/jobs/registry.ts` | Global registry for job definitions |
+| `src/server/jobs/index.ts` | Main exports |
+| `src/server/trpc/routers/queue.ts` | tRPC router for queue management |
+| `src/server/db/schema.ts` | Database tables: `jobs`, `job_phases`, `queue_handler_heartbeat`, `queue_lock` |
+
+### Job Queue Concepts
+
+1. **Jobs**: Top-level work units with type, payload, status, and retry tracking
+2. **Phases**: Individual steps within a job, each must be idempotent
+3. **Visibility Timeout**: Prevents duplicate processing by hiding claimed jobs
+4. **Heartbeat**: Health monitoring to detect dead handlers
+5. **Scheduler**: Periodic processing trigger (30-minute intervals)
+
+### Creating a New Job Type
+
+To add a new background job type:
+
+1. Create a job definition file in `src/server/jobs/` or a subdirectory:
+```typescript
+import { defineJob, JobPriority } from "@/server/jobs";
+
+export const myNewJob = defineJob<MyPayloadType>({
+  type: "my-new-job",
+  description: "What this job does",
+  defaultPriority: JobPriority.NORMAL,
+  defaultMaxRetries: 3,
+
+  phases: [
+    {
+      name: "phase-1",
+      async execute(ctx) {
+        // Must be idempotent!
+        // Access payload: ctx.job.payload
+        // Access previous phase output: ctx.phase.input
+        return { success: true, output: { /* data for next phase */ } };
+      },
+    },
+    // More phases...
+  ],
+
+  async onComplete(job, result) {
+    // Called when all phases complete successfully
+  },
+
+  async onFailed(job, error) {
+    // Called when job fails after all retries
+  },
+});
+```
+
+2. Register the job in your application startup:
+```typescript
+import { JobRegistry } from "@/server/jobs";
+import { myNewJob } from "./my-new-job";
+
+JobRegistry.register(myNewJob);
+```
+
+3. Create jobs using the service:
+```typescript
+import { createJob } from "@/server/jobs";
+
+await createJob({
+  type: "my-new-job",
+  payload: { /* your data */ },
+  userId: optionalUserId,
+});
+```
+
+### Modifying Job Queue Behavior
+
+| Change | Files to Update |
+|--------|-----------------|
+| Add new job type | Create definition file, register in startup |
+| Change scheduler interval | `src/server/jobs/scheduler.ts` - `DEFAULT_INTERVAL_MS` |
+| Modify visibility timeout | `src/server/jobs/types.ts` - `DEFAULT_QUEUE_CONFIG` |
+| Add tRPC endpoints | `src/server/trpc/routers/queue.ts` |
+| Change database schema | `src/server/db/schema.ts`, then `pnpm db:generate` |
+
+### Phase Execution Rules
+
+1. **Idempotency**: Every phase must be safe to run multiple times with the same input
+2. **Output Propagation**: Each phase's output becomes the next phase's input
+3. **Conditional Execution**: Use `shouldRun` to skip phases based on conditions
+4. **Error Handling**: Return `{ success: false, error: "message", shouldRetry: true }` for retryable errors
+5. **Early Exit**: Return `{ success: true, skipRemaining: true }` to complete job early
