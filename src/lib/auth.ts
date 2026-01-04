@@ -3,6 +3,10 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/server/db";
 import * as schema from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { logger } from "./logger";
+
+// Create a child logger for auth operations
+const authLogger = logger.child({ module: "auth" });
 
 // Helper function to create default settings for a new user
 async function createDefaultSettings(userId: string): Promise<void> {
@@ -15,10 +19,16 @@ async function createDefaultSettings(userId: string): Promise<void> {
       createdAt: now,
       updatedAt: now,
     });
-    console.log(`Created default settings for user ${userId}`);
+    authLogger.info({
+      event: "auth.user.settings_created",
+      userId,
+    });
   } catch (error) {
     // Settings may already exist, ignore
-    console.log(`Settings already exist for user ${userId}`);
+    authLogger.debug({
+      event: "auth.user.settings_exists",
+      userId,
+    });
   }
 }
 
@@ -78,7 +88,11 @@ export const auth = betterAuth({
       );
 
       if (!response.ok) {
-        console.error("Failed to fetch GitHub user info");
+        authLogger.error({
+          event: "auth.github.api_error",
+          status: response.status,
+          accountId: account.accountId,
+        });
         return true; // Deny if we can't verify
       }
 
@@ -88,13 +102,26 @@ export const auth = betterAuth({
       const allowed = await isUsernameAllowed(username);
 
       if (!allowed) {
-        console.log(`Access denied for GitHub user: ${username}`);
+        authLogger.warn({
+          event: "auth.signin.denied",
+          reason: "not_in_allowlist",
+          githubUsername: username,
+        });
         return true; // Deny sign in
       }
 
+      authLogger.info({
+        event: "auth.signin.allowed",
+        githubUsername: username,
+      });
+
       return false; // Allow sign in
     } catch (error) {
-      console.error("Error checking allow list:", error);
+      authLogger.error({
+        event: "auth.allowlist.check_error",
+        error: error instanceof Error ? error.message : "Unknown error",
+        accountId: account.accountId,
+      });
       return true; // Deny on error
     }
   },

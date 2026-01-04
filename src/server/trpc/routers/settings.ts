@@ -6,6 +6,12 @@ import { eq } from "drizzle-orm";
 
 export const settingsRouter = router({
   get: protectedProcedure.query(async ({ ctx }) => {
+    const { logger } = ctx;
+
+    logger.debug({
+      event: "settings.get.start",
+    });
+
     const settings = await db
       .select()
       .from(userSettings)
@@ -13,6 +19,10 @@ export const settingsRouter = router({
       .limit(1);
 
     if (settings.length === 0) {
+      logger.info({
+        event: "settings.get.creating_default",
+      });
+
       // Create default settings if they don't exist
       const now = new Date();
       await db.insert(userSettings).values({
@@ -31,11 +41,17 @@ export const settingsRouter = router({
     }
 
     const { vaultName, incomingFolder } = settings[0];
+    const isComplete = Boolean(vaultName && incomingFolder);
+
+    logger.debug({
+      event: "settings.get.complete",
+      isComplete,
+    });
 
     return {
       vaultName,
       incomingFolder,
-      isComplete: Boolean(vaultName && incomingFolder),
+      isComplete,
     };
   }),
 
@@ -47,9 +63,17 @@ export const settingsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { logger } = ctx;
+
       // Clean up the input values
       const vaultName = input.vaultName.trim().replace(/^\/+|\/+$/g, "");
       const incomingFolder = input.incomingFolder.trim().replace(/^\/+|\/+$/g, "");
+
+      logger.info({
+        event: "settings.update.start",
+        vaultName,
+        incomingFolder,
+      });
 
       const existingSettings = await db
         .select()
@@ -67,6 +91,12 @@ export const settingsRouter = router({
           createdAt: now,
           updatedAt: now,
         });
+
+        logger.info({
+          event: "settings.update.created",
+          vaultName,
+          incomingFolder,
+        });
       } else {
         await db
           .update(userSettings)
@@ -76,6 +106,12 @@ export const settingsRouter = router({
             updatedAt: now,
           })
           .where(eq(userSettings.userId, ctx.session.user.id));
+
+        logger.info({
+          event: "settings.update.updated",
+          vaultName,
+          incomingFolder,
+        });
       }
 
       return {
