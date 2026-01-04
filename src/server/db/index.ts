@@ -32,6 +32,12 @@ logger.info({ event: "db.wal.setting" }, "Setting WAL mode");
 sqlite.pragma("journal_mode = WAL");
 logger.info({ event: "db.wal.set" }, "WAL mode set");
 
+// Set busy timeout to wait for locks instead of failing immediately
+// This is critical when migrations may be running concurrently
+logger.info({ event: "db.busy_timeout.setting" }, "Setting busy timeout");
+sqlite.pragma("busy_timeout = 30000"); // Wait up to 30 seconds for locks
+logger.info({ event: "db.busy_timeout.set" }, "Busy timeout set to 30s");
+
 logger.info({ event: "db.drizzle.creating" }, "Creating drizzle instance");
 export const db = drizzle(sqlite, { schema });
 logger.info({ event: "db.ready" }, "Database ready");

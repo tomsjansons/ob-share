@@ -14,7 +14,11 @@ cd /app
 # Run drizzle-kit migrate directly via npx to avoid pnpm PATH issues
 npx drizzle-kit migrate 2>&1 || echo "[MIGRATION] Migration failed or no migrations to run"
 
-echo "[MIGRATION] Drizzle-kit migration complete, running seeding..."
+echo "[MIGRATION] Drizzle-kit migration complete, waiting for connection release..."
+# Give drizzle-kit time to fully close its connection
+sleep 2
+
+echo "[MIGRATION] Running seeding..."
 
 # Seed the database with initial allow list
 node -e "
@@ -35,8 +39,9 @@ if (!fs.existsSync(dbDir)) {
 console.log('[MIGRATION] Opening database connection for seeding...');
 const db = new Database(dbPath);
 
-console.log('[MIGRATION] Setting WAL mode...');
+console.log('[MIGRATION] Setting pragmas...');
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 30000'); // Wait up to 30s for locks
 
 // Create allow_list table if not exists
 console.log('[MIGRATION] Creating allow_list table if needed...');
@@ -64,3 +69,6 @@ console.log('[MIGRATION] Database seeded successfully');
 " || echo "[MIGRATION] Seeding completed (or already seeded)"
 
 echo "[MIGRATION] Database setup complete!"
+
+# Explicitly exit to ensure supervisord knows the process is done
+exit 0
