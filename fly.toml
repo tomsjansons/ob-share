@@ -24,7 +24,7 @@ primary_region = 'arn'
     soft_limit = 900
 
 [[http_service.checks]]
-  grace_period = "45s"
+  grace_period = "20s"
   interval = "15s"
   method = "GET"
   timeout = "5s"
@@ -36,10 +36,10 @@ primary_region = 'arn'
   HOSTNAME = "0.0.0.0"
   PORT = "3000"
 
-#[[mounts]]
-#  source = 'obsidian_data'
-#  destination = '/data'
-#  initial_size = '1gb'
+[[mounts]]
+  source = 'obsidian_data'
+  destination = '/data'
+  initial_size = '1gb'
 
 [[vm]]
   memory = '1gb'
