@@ -2,14 +2,17 @@
 # Run database migrations and seeding after Next.js has started
 # This runs as a supervisor program to avoid blocking the startup
 
-set -e
+# Ensure Node.js and corepack binaries are in PATH
+export PATH="/usr/bin:/usr/local/bin:$PATH"
 
 echo "Waiting for Next.js to be ready..."
 sleep 2
 
 echo "Running database migrations..."
 cd /app
-pnpm db:migrate || echo "Migration failed or no migrations to run"
+
+# Run drizzle-kit migrate directly via npx to avoid pnpm PATH issues
+npx drizzle-kit migrate 2>&1 || echo "Migration failed or no migrations to run"
 
 # Seed the database with initial allow list
 echo "Seeding database..."
