@@ -5,6 +5,7 @@ import { saveToVault, dataUrlToBuffer, type LocationInfo, type VaultFile } from 
 import { db } from "@/server/db";
 import { userSettings } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { sanitizeFileForLogging } from "@/lib/logger";
 
 const LocationSchema = z.object({
   country: z.string().optional(),
@@ -31,6 +32,18 @@ export const vaultRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { logger } = ctx;
+
+      // Log the save attempt with safe metadata only
+      logger.info({
+        event: "vault.save.start",
+        hasTitle: Boolean(input.title),
+        hasText: Boolean(input.text),
+        hasUrl: Boolean(input.url),
+        fileCount: input.files?.length ?? 0,
+        hasLocation: Boolean(input.location),
+      });
+
       // Get user's vault settings
       const settings = await db
         .select()
@@ -39,6 +52,11 @@ export const vaultRouter = router({
         .limit(1);
 
       if (settings.length === 0 || !settings[0].vaultName || !settings[0].incomingFolder) {
+        logger.warn({
+          event: "vault.save.settings_missing",
+          userId: ctx.session.user.id,
+        });
+
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: "Vault settings not configured. Please configure your vault settings first.",
@@ -49,6 +67,12 @@ export const vaultRouter = router({
         vaultName: settings[0].vaultName,
         incomingFolder: settings[0].incomingFolder,
       };
+
+      logger.debug({
+        event: "vault.save.config_loaded",
+        vaultName: vaultConfig.vaultName,
+        incomingFolder: vaultConfig.incomingFolder,
+      });
 
       // Convert data URLs to buffers for file saving
       const vaultFiles: VaultFile[] = [];
@@ -62,8 +86,17 @@ export const vaultRouter = router({
               type: mimeType,
               data: buffer,
             });
+
+            logger.debug({
+              event: "vault.save.file_converted",
+              file: sanitizeFileForLogging({ name: file.name, type: mimeType, size: buffer.length }),
+            });
           } catch (error) {
-            console.error(`Error converting file ${file.name}:`, error);
+            logger.error({
+              event: "vault.save.file_conversion_error",
+              file: sanitizeFileForLogging(file),
+              error: error instanceof Error ? error.message : "Unknown error",
+            });
           }
         }
       }
@@ -76,6 +109,19 @@ export const vaultRouter = router({
         location: input.location as LocationInfo | undefined,
         vaultConfig,
       });
+
+      if (result.success) {
+        logger.info({
+          event: "vault.save.complete",
+          notePath: result.notePath,
+          savedFilesCount: result.savedFiles?.length ?? 0,
+        });
+      } else {
+        logger.error({
+          event: "vault.save.failed",
+          error: result.error,
+        });
+      }
 
       return result;
     }),

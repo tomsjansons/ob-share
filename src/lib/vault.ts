@@ -1,5 +1,9 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { logger } from "./logger";
+
+// Create a child logger for vault operations
+const vaultLogger = logger.child({ module: "vault" });
 
 // Base path for vault storage
 const DATA_ROOT = "/data/Documents";
@@ -213,6 +217,14 @@ export async function saveToVault(options: SaveToVaultOptions): Promise<SaveResu
       : "shared";
     const baseFilename = `${timestamp}-${baseName}`;
 
+    vaultLogger.debug({
+      event: "vault.file.save_start",
+      vaultPath,
+      incomingPath,
+      baseFilename,
+      fileCount: options.files?.length ?? 0,
+    });
+
     // Save any attached files first
     const savedFileNames: string[] = [];
 
@@ -229,6 +241,13 @@ export async function saveToVault(options: SaveToVaultOptions): Promise<SaveResu
         const attachmentPath = path.join(incomingPath, attachmentName);
         await fs.writeFile(attachmentPath, file.data);
         savedFileNames.push(attachmentName);
+
+        vaultLogger.debug({
+          event: "vault.file.attachment_saved",
+          attachmentName,
+          fileType: file.type,
+          fileSize: file.data.length,
+        });
       }
     }
 
@@ -247,13 +266,26 @@ export async function saveToVault(options: SaveToVaultOptions): Promise<SaveResu
     const notePath = path.join(incomingPath, `${baseFilename}.md`);
     await fs.writeFile(notePath, fullContent, "utf-8");
 
+    const relativeNotePath = path.relative(vaultPath, notePath);
+
+    vaultLogger.info({
+      event: "vault.file.save_complete",
+      notePath: relativeNotePath,
+      attachmentCount: savedFileNames.length,
+    });
+
     return {
       success: true,
-      notePath: path.relative(vaultPath, notePath),
+      notePath: relativeNotePath,
       savedFiles: savedFileNames,
     };
   } catch (error) {
-    console.error("Error saving to vault:", error);
+    vaultLogger.error({
+      event: "vault.file.save_error",
+      error: error instanceof Error ? error.message : "Unknown error",
+      vaultName: options.vaultConfig.vaultName,
+      incomingFolder: options.vaultConfig.incomingFolder,
+    });
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error occurred",

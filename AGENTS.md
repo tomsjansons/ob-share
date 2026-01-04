@@ -162,3 +162,58 @@ Vault paths are now configured per-user via settings:
 - Full path: `/data/Documents/{vault-name}/{incoming-folder}/`
 - Settings created automatically on user signup
 - Settings can be modified anytime from the settings page
+
+## Logging
+
+The application uses Pino for structured logging across all backend operations.
+
+### Key Logging Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/logger.ts` | Pino logger configuration and utility functions |
+| `src/server/trpc/trpc.ts` | tRPC context with logger and logging middleware |
+
+### Logging Architecture
+
+- **Logger Configuration:** `src/lib/logger.ts` exports the base Pino logger and helper functions
+- **tRPC Context:** Every tRPC procedure receives a child logger with `requestId` and `userId` context
+- **Logging Middleware:** All tRPC procedures are wrapped with logging middleware that logs start, complete, and error events
+- **Module Loggers:** Auth and vault modules create their own child loggers with `module` context
+
+### Log Events
+
+All logs use structured event names for easy filtering:
+
+| Event Pattern | Description |
+|--------------|-------------|
+| `trpc.request.*` | tRPC procedure lifecycle (start, complete, error) |
+| `share.request.*` | Share API endpoint events |
+| `vault.save.*` | Vault content saving operations |
+| `vault.file.*` | File-level vault operations |
+| `auth.signin.*` | Authentication events |
+| `auth.user.*` | User lifecycle events |
+| `settings.*` | User settings operations |
+
+### Security Considerations
+
+**IMPORTANT:** The logging system is designed to never log sensitive data:
+
+- Shared content (text, URLs, titles) is NEVER logged
+- File data (base64 content) is NEVER logged
+- Only metadata is logged (file names, types, sizes, counts)
+- Use `sanitizeForLogging()` and `sanitizeFileForLogging()` helpers when logging user data
+- Sensitive keys are automatically redacted: text, url, title, dataUrl, data, content, password, secret, token
+
+### Modifying Logging Behavior
+
+To add logging to new code:
+
+1. For tRPC procedures: Use `ctx.logger` which includes request context
+2. For non-tRPC modules: Import `logger` from `@/lib/logger` and create a child logger:
+   ```typescript
+   import { logger } from "@/lib/logger";
+   const moduleLogger = logger.child({ module: "my-module" });
+   ```
+3. Always use structured events with an `event` field for filtering
+4. Never log sensitive user content - use `sanitizeForLogging()` helper
