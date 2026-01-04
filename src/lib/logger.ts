@@ -5,20 +5,28 @@ const isDev = process.env.NODE_ENV !== "production";
 /**
  * Pino logger configuration
  * - In development: pretty-print with colors
- * - In production: JSON format for structured logging
+ * - In production: logfmt format for structured logging
  */
 export const logger = pino({
   level: process.env.LOG_LEVEL || (isDev ? "debug" : "info"),
-  ...(isDev && {
-    transport: {
-      target: "pino-pretty",
-      options: {
-        colorize: true,
-        translateTime: "SYS:standard",
-        ignore: "pid,hostname",
+  transport: isDev
+    ? {
+        target: "pino-pretty",
+        options: {
+          colorize: true,
+          translateTime: "SYS:standard",
+          ignore: "pid,hostname",
+        },
+      }
+    : {
+        target: "pino-logfmt",
+        options: {
+          flattenNestedObjects: true,
+          convertToSnakeCase: true,
+          includeLevelLabel: true,
+          formatTime: true,
+        },
       },
-    },
-  }),
 });
 
 /**

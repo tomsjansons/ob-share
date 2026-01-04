@@ -28,7 +28,7 @@ This project provides a cloud-based, containerized Obsidian installation that:
 | Database | SQLite + Drizzle ORM | User data and sessions |
 | UI | shadcn/ui + Tailwind CSS | Component library |
 | Process Manager | supervisord | Service orchestration |
-| Logging | Pino | Structured JSON logging |
+| Logging | Pino | Structured logging (logfmt in prod, pretty in dev) |
 | Application | Obsidian v1.7.7 | Note-taking app |
 
 ## Project Structure
