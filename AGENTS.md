@@ -140,7 +140,7 @@ Settings are stored in the `user_settings` table with foreign key to `user`.
 ### Frontmatter Schema
 
 Notes include YAML frontmatter with these fields:
-- `location`: String describing share location (country, city, area, street)
+- `location`: String describing share location (country, city, area, street) or "unknown" if not available
 - `created`: ISO 8601 timestamp
 - `status`: String indicating note status (defaults to "new")
 - `tags`: Array of strings (empty by default)
@@ -154,6 +154,62 @@ To change how content is saved to the vault:
 3. Update `src/server/trpc/routers/settings.ts` for settings changes
 4. Update `src/components/share-page.tsx` for UI feedback
 5. Update `src/components/settings-page.tsx` for settings UI
+
+## Location Sharing
+
+The app includes location sharing functionality that adds geographic context to shared notes.
+
+### Key Location Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/location.ts` | Client-side geolocation and reverse geocoding |
+| `src/components/location-permission-modal.tsx` | Permission request dialog |
+| `src/components/ui/dialog.tsx` | Base dialog component |
+| `src/server/db/schema.ts` | `locationPermission` field in `user_settings` table |
+
+### Location Permission Flow
+
+1. On first share, if `locationPermission` is `not_asked`, show permission modal
+2. User chooses to allow or deny
+3. Permission status stored in database (`granted` or `denied`)
+4. If granted, get location via Geolocation API
+5. Reverse geocode using Nominatim (OpenStreetMap) API
+6. Location saved in note frontmatter
+
+### LocationInfo Interface
+
+```typescript
+interface LocationInfo {
+  country?: string;
+  city?: string;
+  area?: string;    // neighborhood/suburb/district
+  street?: string;
+}
+```
+
+### Location Permission Status
+
+Stored in `user_settings.locationPermission`:
+- `not_asked`: User hasn't been prompted yet (show modal on next share)
+- `granted`: User allowed location access
+- `denied`: User denied or disabled location access
+
+### Modifying Location Behavior
+
+| Change | Files to Update |
+|--------|-----------------|
+| Change geocoding provider | `src/lib/location.ts` - `reverseGeocode()` function |
+| Modify permission UI | `src/components/location-permission-modal.tsx` |
+| Add location fields | `src/lib/vault.ts` - `LocationInfo` interface |
+| Change settings UI | `src/components/settings-page.tsx` |
+| Modify permission storage | `src/server/trpc/routers/settings.ts` |
+
+### Fallback Behavior
+
+- If reverse geocoding fails → Use GPS coordinates (e.g., "45.1234°N, 19.5678°E")
+- If geolocation not supported → Save without location
+- If permission denied → Save with "unknown" location
 
 ### Path Configuration
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,10 +9,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Check, Share2, ArrowLeft, Image, Music, Video, FileText, Loader2, CheckCircle2, XCircle, AlertTriangle, Settings } from "lucide-react";
+import { Check, Share2, ArrowLeft, Image, Music, Video, FileText, Loader2, CheckCircle2, XCircle, AlertTriangle, Settings, MapPin } from "lucide-react";
 import Link from "next/link";
 import type { SharedFile } from "@/lib/share-store";
 import { trpc } from "@/lib/trpc/client";
+import { LocationPermissionModal } from "@/components/location-permission-modal";
+import { getLocation, isGeolocationSupported } from "@/lib/location";
+import type { LocationInfo } from "@/lib/vault";
 
 interface SharePageProps {
   user: {
@@ -102,15 +105,21 @@ function FilePreview({ file }: { file: SharedFile }) {
   );
 }
 
-type SaveStatus = "idle" | "saving" | "saved" | "error";
+type SaveStatus = "idle" | "waiting_location" | "getting_location" | "saving" | "saved" | "error";
 
 export function SharePage({ user, sharedData }: SharePageProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedPath, setSavedPath] = useState<string | null>(null);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [locationInfo, setLocationInfo] = useState<LocationInfo | undefined>(undefined);
+  const saveInitiated = useRef(false);
 
   const settingsQuery = trpc.settings.get.useQuery();
   const isSettingsComplete = settingsQuery.data?.isComplete ?? false;
+  const locationPermission = settingsQuery.data?.locationPermission ?? "not_asked";
+
+  const updateLocationPermission = trpc.settings.updateLocationPermission.useMutation();
 
   const saveToVault = trpc.vault.saveSharedContent.useMutation({
     onSuccess: (result) => {
@@ -133,41 +142,110 @@ export function SharePage({ user, sharedData }: SharePageProps) {
   const hasFiles = sharedData.files && sharedData.files.length > 0;
   const hasSharedContent = hasTextContent || hasFiles;
 
+  // Function to perform the actual save
+  const performSave = useCallback((location: LocationInfo | undefined) => {
+    setSaveStatus("saving");
+    saveToVault.mutate({
+      title: sharedData.title || undefined,
+      text: sharedData.text || undefined,
+      url: sharedData.url || undefined,
+      files: sharedData.files?.map((f) => ({
+        name: f.name,
+        type: f.type,
+        dataUrl: f.dataUrl,
+      })),
+      location,
+    });
+  }, [sharedData, saveToVault]);
+
+  // Function to get location and then save
+  const getLocationAndSave = useCallback(async () => {
+    setSaveStatus("getting_location");
+
+    if (!isGeolocationSupported()) {
+      // No geolocation support, save without location
+      performSave(undefined);
+      return;
+    }
+
+    const result = await getLocation();
+
+    if (result.success && result.location) {
+      setLocationInfo(result.location);
+      performSave(result.location);
+    } else {
+      // Location failed, save without location
+      performSave(undefined);
+    }
+  }, [performSave]);
+
+  // Handle location modal close
+  const handleLocationModalClose = useCallback(async (granted: boolean) => {
+    setShowLocationModal(false);
+
+    // Update permission status in database
+    const newStatus = granted ? "granted" : "denied";
+    updateLocationPermission.mutate({ locationPermission: newStatus });
+
+    if (granted) {
+      // User granted permission, get location and save
+      await getLocationAndSave();
+    } else {
+      // User denied, save without location
+      performSave(undefined);
+    }
+  }, [updateLocationPermission, getLocationAndSave, performSave]);
+
   // Automatically save to vault when content is received and settings are complete
   useEffect(() => {
-    if (hasSharedContent && saveStatus === "idle" && isSettingsComplete) {
-      setSaveStatus("saving");
-      saveToVault.mutate({
-        title: sharedData.title || undefined,
-        text: sharedData.text || undefined,
-        url: sharedData.url || undefined,
-        files: sharedData.files?.map((f) => ({
-          name: f.name,
-          type: f.type,
-          dataUrl: f.dataUrl,
-        })),
-        // Location will be added later when we have geolocation support
-        location: undefined,
-      });
+    if (!hasSharedContent || saveStatus !== "idle" || !isSettingsComplete || settingsQuery.isLoading) {
+      return;
     }
-  }, [hasSharedContent, saveStatus, sharedData, saveToVault, isSettingsComplete]);
+
+    // Prevent double execution
+    if (saveInitiated.current) {
+      return;
+    }
+    saveInitiated.current = true;
+
+    // Check location permission status
+    if (locationPermission === "not_asked" && isGeolocationSupported()) {
+      // Show location permission modal
+      setSaveStatus("waiting_location");
+      setShowLocationModal(true);
+    } else if (locationPermission === "granted") {
+      // Permission already granted, get location and save
+      getLocationAndSave();
+    } else {
+      // Permission denied or not supported, save without location
+      setSaveStatus("saving");
+      performSave(undefined);
+    }
+  }, [hasSharedContent, saveStatus, isSettingsComplete, settingsQuery.isLoading, locationPermission, getLocationAndSave, performSave]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mb-2 flex justify-center">
-            <Share2 className="h-12 w-12 text-primary" />
-          </div>
-          <CardTitle className="text-2xl font-bold">
-            {hasSharedContent ? "Content Received" : "Share to ob-share"}
-          </CardTitle>
-          <CardDescription>
-            {hasSharedContent
-              ? "The following content was shared with ob-share"
-              : "No content was shared"}
-          </CardDescription>
-        </CardHeader>
+    <>
+      {/* Location Permission Modal */}
+      <LocationPermissionModal
+        open={showLocationModal}
+        onClose={handleLocationModalClose}
+      />
+
+      <div className="flex min-h-screen items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mb-2 flex justify-center">
+              <Share2 className="h-12 w-12 text-primary" />
+            </div>
+            <CardTitle className="text-2xl font-bold">
+              {hasSharedContent ? "Content Received" : "Share to ob-share"}
+            </CardTitle>
+            <CardDescription>
+              {hasSharedContent
+                ? "The following content was shared with ob-share"
+                : "No content was shared"}
+            </CardDescription>
+          </CardHeader>
         <CardContent className="space-y-4">
           {/* Incomplete Setup Warning */}
           {!settingsQuery.isLoading && !isSettingsComplete && (
@@ -257,6 +335,18 @@ export function SharePage({ user, sharedData }: SharePageProps) {
 
               {/* Save status indicator */}
               <div className="rounded-md bg-muted/50 p-3">
+                {(saveStatus === "waiting_location") && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <MapPin className="h-4 w-4" />
+                    <span>Waiting for location permission...</span>
+                  </div>
+                )}
+                {saveStatus === "getting_location" && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Getting your location...</span>
+                  </div>
+                )}
                 {saveStatus === "saving" && (
                   <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -273,6 +363,14 @@ export function SharePage({ user, sharedData }: SharePageProps) {
                       <p className="text-xs text-center text-muted-foreground">
                         {savedPath}
                       </p>
+                    )}
+                    {locationInfo && (
+                      <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+                        <MapPin className="h-3 w-3" />
+                        <span>
+                          {[locationInfo.city, locationInfo.country].filter(Boolean).join(", ") || "Location saved"}
+                        </span>
+                      </div>
                     )}
                   </div>
                 )}
@@ -311,6 +409,7 @@ export function SharePage({ user, sharedData }: SharePageProps) {
           </Link>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </>
   );
 }
