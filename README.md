@@ -44,6 +44,8 @@ ob-share/
 ├── drizzle.config.ts       # Database configuration
 ├── .env.example            # Environment variables template
 ├── .gitignore              # Git ignore patterns
+├── scripts/
+│   └── run-migrations.sh   # Database migration script (runs via supervisor)
 ├── src/
 │   ├── app/                # Next.js App Router pages
 │   │   ├── page.tsx        # Landing page (logged out)
@@ -253,7 +255,8 @@ The container uses supervisord to manage all services with automatic restart cap
 
 | Priority | Service | Description |
 |----------|---------|-------------|
-| 50 | nextjs | Next.js web portal |
+| 10 | nextjs | Next.js web portal (starts first for fast health checks) |
+| 20 | migrations | Database migrations and seeding (runs once) |
 | 100 | xvfb | Virtual X11 framebuffer (display :5) |
 | 200 | openbox | Minimal window manager |
 | 300 | x11vnc | VNC server with password authentication |
@@ -262,10 +265,10 @@ The container uses supervisord to manage all services with automatic restart cap
 ### Startup Flow
 
 1. `entrypoint.sh` initializes persistent volume and VNC password
-2. Database migrations run automatically
-3. Database is seeded with initial allow list
-4. supervisord launches services in priority order
-5. Next.js starts and serves the web portal
+2. supervisord launches services in priority order
+3. Next.js starts first and serves the web portal (enables fast Fly.io health checks)
+4. Database migrations run automatically
+5. Database is seeded with initial allow list
 6. Xvfb creates virtual display
 7. Openbox provides window management
 8. x11vnc exposes display over VNC
