@@ -6,14 +6,8 @@
  */
 
 export async function register() {
-  // Dynamic import to avoid issues during build
-  const { logger } = await import("@/lib/logger");
-  const startupLogger = logger.child({ module: "startup" });
-
-  startupLogger.info({
-    event: "instrumentation.register",
-    nodeEnv: process.env.NODE_ENV,
-    databaseUrl: process.env.DATABASE_URL,
-    nextRuntime: process.env.NEXT_RUNTIME,
-  }, "Next.js instrumentation register called");
+  console.log("[STARTUP] Instrumentation register() called at", new Date().toISOString());
+  console.log("[STARTUP] NODE_ENV:", process.env.NODE_ENV);
+  console.log("[STARTUP] DATABASE_URL:", process.env.DATABASE_URL);
+  console.log("[STARTUP] NEXT_RUNTIME:", process.env.NEXT_RUNTIME);
 }
