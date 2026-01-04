@@ -13,6 +13,7 @@ import { Check, Share2, ArrowLeft, Image, Music, Video, FileText, Loader2, Check
 import Link from "next/link";
 import type { SharedFile } from "@/lib/share-store";
 import { trpc } from "@/lib/trpc/client";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface SharePageProps {
   user: {
@@ -153,7 +154,10 @@ export function SharePage({ user, sharedData }: SharePageProps) {
   }, [hasSharedContent, saveStatus, sharedData, saveToVault, isSettingsComplete]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mb-2 flex justify-center">
@@ -171,18 +175,18 @@ export function SharePage({ user, sharedData }: SharePageProps) {
         <CardContent className="space-y-4">
           {/* Incomplete Setup Warning */}
           {!settingsQuery.isLoading && !isSettingsComplete && (
-            <div className="flex flex-col gap-3 rounded-md bg-amber-50 border border-amber-200 p-4 text-amber-800">
+            <div className="flex flex-col gap-3 rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-4 text-amber-800 dark:text-amber-200">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="font-medium">Incomplete Setup</p>
-                  <p className="text-sm text-amber-700">
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
                     Vault settings must be configured before content can be saved.
                   </p>
                 </div>
               </div>
               <Link href="/settings">
-                <Button size="sm" variant="outline" className="w-full border-amber-300 hover:bg-amber-100">
+                <Button size="sm" variant="outline" className="w-full border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900">
                   <Settings className="mr-2 h-4 w-4" />
                   Configure Vault Settings
                 </Button>
@@ -265,7 +269,7 @@ export function SharePage({ user, sharedData }: SharePageProps) {
                 )}
                 {saveStatus === "saved" && (
                   <div className="space-y-1">
-                    <div className="flex items-center justify-center gap-2 text-sm text-green-600">
+                    <div className="flex items-center justify-center gap-2 text-sm text-green-600 dark:text-green-400">
                       <CheckCircle2 className="h-4 w-4" />
                       <span>Saved to Obsidian vault</span>
                     </div>
@@ -291,7 +295,7 @@ export function SharePage({ user, sharedData }: SharePageProps) {
                 )}
                 {saveStatus === "idle" && (
                   <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <Check className="h-4 w-4 text-green-500" />
+                    <Check className="h-4 w-4 text-green-500 dark:text-green-400" />
                     <span>Received as {user.name || user.email}</span>
                   </div>
                 )}

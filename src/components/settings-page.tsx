@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function SettingsPage() {
   const [vaultName, setVaultName] = useState("");
@@ -64,7 +65,10 @@ export function SettingsPage() {
 
   if (settingsQuery.isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
+      <div className="relative flex min-h-screen items-center justify-center p-4">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
         <Card className="w-full max-w-md">
           <CardContent className="flex items-center justify-center py-8">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -75,7 +79,10 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Vault Settings</CardTitle>
@@ -141,7 +148,7 @@ export function SettingsPage() {
 
           {/* Status Messages */}
           {saveStatus === "saved" && (
-            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 rounded-md p-3">
+            <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 rounded-md p-3">
               <CheckCircle2 className="h-4 w-4" />
               <span>Settings saved successfully</span>
             </div>
