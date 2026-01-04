@@ -3,11 +3,11 @@ import { drizzle, BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 import path from "path";
 import fs from "fs";
-import { logger as baseLogger } from "@/lib/logger";
+import { logger as baseLogger, getElapsedMs } from "@/lib/logger";
 
 const logger = baseLogger.child({ module: "database" });
 
-logger.info({ event: "db.module.loading" }, "Database module loading");
+logger.info({ event: "db.module.loading", elapsedMs: getElapsedMs() }, "Database module loading");
 
 // Database connection is initialized lazily to allow the server to start
 // even if the database isn't immediately available (e.g., volume mounting)
@@ -17,12 +17,13 @@ let _sqlite: Database.Database | null = null;
 function initializeDatabase(): BetterSQLite3Database<typeof schema> {
   if (_db) return _db;
 
+  const initStart = Date.now();
   try {
     const dataDir = process.env.DATABASE_URL
       ? path.dirname(process.env.DATABASE_URL)
       : "./data";
 
-    logger.info({ event: "db.config", dataDir }, "Database data directory");
+    logger.info({ event: "db.config", dataDir, elapsedMs: getElapsedMs() }, "Database data directory");
 
     if (!fs.existsSync(dataDir)) {
       logger.info(
@@ -52,9 +53,10 @@ function initializeDatabase(): BetterSQLite3Database<typeof schema> {
     _sqlite.pragma("busy_timeout = 30000"); // Wait up to 30 seconds for locks
     logger.info({ event: "db.busy_timeout.set" }, "Busy timeout set to 30s");
 
-    logger.info({ event: "db.drizzle.creating" }, "Creating drizzle instance");
+    logger.info({ event: "db.drizzle.creating", elapsedMs: getElapsedMs() }, "Creating drizzle instance");
     _db = drizzle(_sqlite, { schema });
-    logger.info({ event: "db.ready" }, "Database ready");
+    const initDuration = Date.now() - initStart;
+    logger.info({ event: "db.ready", elapsedMs: getElapsedMs(), initDurationMs: initDuration }, "Database ready");
 
     return _db;
   } catch (error) {
@@ -101,4 +103,4 @@ export function resetDatabaseState(): void {
 
 export type DatabaseType = typeof db;
 
-logger.info({ event: "db.module.loaded" }, "Database module loaded (lazy init)");
+logger.info({ event: "db.module.loaded", elapsedMs: getElapsedMs() }, "Database module loaded (lazy init)");
