@@ -108,7 +108,8 @@ COPY package.json /app/
 # Copy configuration files
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY scripts /app/scripts
+RUN chmod +x /entrypoint.sh && chmod +x /app/scripts/*.sh
 
 # Environment variables
 ENV DISPLAY=:5
