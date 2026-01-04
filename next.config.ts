@@ -13,6 +13,8 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Externalize pino packages to prevent bundling issues with worker threads
+  serverExternalPackages: ["pino", "pino-pretty", "pino-logfmt"],
 };
 
 export default withPWA(nextConfig);
