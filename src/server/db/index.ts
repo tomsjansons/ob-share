@@ -3,35 +3,37 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 import path from "path";
 import fs from "fs";
+import { logger as baseLogger } from "@/lib/logger";
 
-console.log("[DB] Database module loading...");
+const logger = baseLogger.child({ module: "database" });
+
+logger.info({ event: "db.module.loading" }, "Database module loading");
 
 // Ensure data directory exists
 const dataDir = process.env.DATABASE_URL
   ? path.dirname(process.env.DATABASE_URL)
   : "./data";
 
-console.log("[DB] Data directory:", dataDir);
+logger.debug({ event: "db.config", dataDir }, "Database data directory");
 
 if (!fs.existsSync(dataDir)) {
-  console.log("[DB] Creating data directory...");
+  logger.info({ event: "db.dir.creating", dataDir }, "Creating data directory");
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
 const dbPath = process.env.DATABASE_URL || "./data/ob-share.db";
-console.log("[DB] Database path:", dbPath);
-console.log("[DB] Opening database connection...");
+logger.info({ event: "db.connection.opening", dbPath }, "Opening database connection");
 
 const sqlite = new Database(dbPath);
-console.log("[DB] Database connection opened");
+logger.debug({ event: "db.connection.opened" }, "Database connection opened");
 
 // Enable WAL mode for better performance
-console.log("[DB] Setting WAL mode...");
+logger.debug({ event: "db.wal.setting" }, "Setting WAL mode");
 sqlite.pragma("journal_mode = WAL");
-console.log("[DB] WAL mode set");
+logger.debug({ event: "db.wal.set" }, "WAL mode set");
 
-console.log("[DB] Creating drizzle instance...");
+logger.debug({ event: "db.drizzle.creating" }, "Creating drizzle instance");
 export const db = drizzle(sqlite, { schema });
-console.log("[DB] Drizzle instance created");
+logger.info({ event: "db.ready" }, "Database ready");
 
 export type Database = typeof db;
