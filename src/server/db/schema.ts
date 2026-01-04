@@ -57,3 +57,16 @@ export const allowList = sqliteTable("allow_list", {
   githubUsername: text("github_username").notNull().unique(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+// User settings table for vault configuration
+export const userSettings = sqliteTable("user_settings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => user.id),
+  vaultName: text("vault_name"),
+  incomingFolder: text("incoming_folder"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});

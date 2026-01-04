@@ -10,9 +10,11 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { signOut } from "@/lib/auth-client";
-import { LogOut } from "lucide-react";
+import { LogOut, Settings, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { trpc } from "@/lib/trpc/client";
 
 interface User {
   id: string;
@@ -28,6 +30,7 @@ interface AccountPageProps {
 export function AccountPage({ user }: AccountPageProps) {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const settingsQuery = trpc.settings.get.useQuery();
 
   const handleSignOut = async () => {
     setIsLoading(true);
@@ -70,6 +73,19 @@ export function AccountPage({ user }: AccountPageProps) {
           <CardDescription>{user.email}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Incomplete Setup Warning */}
+          {settingsQuery.data && !settingsQuery.data.isComplete && (
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium">Incomplete Setup</p>
+                <p className="text-xs text-amber-700">
+                  Configure your vault settings to enable sharing.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-md border p-4 space-y-2">
             <div className="text-sm text-muted-foreground">Account Details</div>
             <div className="grid gap-2 text-sm">
@@ -87,6 +103,18 @@ export function AccountPage({ user }: AccountPageProps) {
               </div>
             </div>
           </div>
+
+          {/* Settings Link */}
+          <Link href="/settings" className="block">
+            <Button variant="outline" className="w-full">
+              <Settings className="mr-2 h-4 w-4" />
+              Vault Settings
+              {settingsQuery.data && !settingsQuery.data.isComplete && (
+                <span className="ml-2 text-xs text-amber-600">(Required)</span>
+              )}
+            </Button>
+          </Link>
+
           <Button
             onClick={handleSignOut}
             disabled={isLoading}

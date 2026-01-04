@@ -54,8 +54,10 @@ The app includes Progressive Web App functionality with Web Share Target API sup
 | `next.config.ts` | PWA plugin configuration (@ducanh2912/next-pwa) |
 | `src/app/layout.tsx` | PWA meta tags and manifest link |
 | `src/app/share/page.tsx` | Share target handler (server component) |
+| `src/app/settings/page.tsx` | Vault settings page |
 | `src/components/share-page.tsx` | Authenticated share view |
 | `src/components/share-login.tsx` | Unauthenticated share login prompt |
+| `src/components/settings-page.tsx` | Vault settings form |
 
 ### Share Target Parameters
 
@@ -105,7 +107,7 @@ To modify accepted file types, update `public/manifest.json`. Include both MIME 
 
 ## Vault Integration
 
-The app saves shared content to the Obsidian vault automatically.
+The app saves shared content to the Obsidian vault automatically. Vault path is configured per-user via the settings page.
 
 ### Key Vault Files
 
@@ -113,15 +115,27 @@ The app saves shared content to the Obsidian vault automatically.
 |------|---------|
 | `src/lib/vault.ts` | Vault file operations (save notes, handle attachments) |
 | `src/server/trpc/routers/vault.ts` | tRPC router for vault operations |
+| `src/server/trpc/routers/settings.ts` | tRPC router for user settings |
+| `src/server/db/schema.ts` | Database schema including `userSettings` table |
+
+### User Settings
+
+Each user must configure their vault settings before sharing works:
+- **Vault Name**: Name of the Obsidian vault folder (e.g., `my-vault`)
+- **Incoming Folder**: Folder inside vault for shared content (e.g., `incoming`)
+
+Settings are stored in the `user_settings` table with foreign key to `user`.
 
 ### Vault Save Flow
 
 1. User shares content → POST to `/api/share`
 2. Content stored temporarily in memory (`share-store.ts`)
 3. Share page loads and displays content
-4. tRPC mutation `vault.saveSharedContent` is called automatically
-5. Markdown note created at `{VAULT_ROOT}/incoming/{timestamp}-{name}.md`
-6. Attachments saved alongside with same naming convention
+4. Settings are checked - if incomplete, warning shown with link to settings
+5. If settings complete, tRPC mutation `vault.saveSharedContent` is called
+6. User settings fetched from database to construct path
+7. Markdown note created at `/data/Documents/{vault-name}/{incoming-folder}/{timestamp}-{name}.md`
+8. Attachments saved alongside with same naming convention
 
 ### Frontmatter Schema
 
@@ -137,10 +151,14 @@ Notes include YAML frontmatter with these fields:
 To change how content is saved to the vault:
 1. Update `src/lib/vault.ts` for file operations and frontmatter generation
 2. Update `src/server/trpc/routers/vault.ts` for API changes
-3. Update `src/components/share-page.tsx` for UI feedback
+3. Update `src/server/trpc/routers/settings.ts` for settings changes
+4. Update `src/components/share-page.tsx` for UI feedback
+5. Update `src/components/settings-page.tsx` for settings UI
 
-### Environment Variables
+### Path Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VAULT_ROOT` | `/home/obsidian/vault` | Path to Obsidian vault root |
+Vault paths are now configured per-user via settings:
+- Base path: `/data/Documents`
+- Full path: `/data/Documents/{vault-name}/{incoming-folder}/`
+- Settings created automatically on user signup
+- Settings can be modified anytime from the settings page

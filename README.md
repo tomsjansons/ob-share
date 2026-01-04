@@ -47,6 +47,8 @@ ob-share/
 │   ├── app/                # Next.js App Router pages
 │   │   ├── page.tsx        # Landing page (logged out)
 │   │   ├── account/        # Account page (logged in)
+│   │   ├── settings/       # Vault settings configuration
+│   │   │   └── page.tsx    # Settings page
 │   │   ├── share/          # Web Share Target display
 │   │   │   └── page.tsx    # Share page (displays & saves content)
 │   │   └── api/            # API routes
@@ -56,6 +58,7 @@ ob-share/
 │   ├── components/         # React components
 │   │   ├── share-page.tsx  # Share target authenticated view
 │   │   ├── share-login.tsx # Share target login prompt
+│   │   ├── settings-page.tsx # Vault settings configuration
 │   │   └── ui/             # shadcn/ui components
 │   ├── lib/                # Shared utilities
 │   │   ├── auth.ts         # Better Auth configuration
@@ -65,7 +68,7 @@ ob-share/
 │   │   └── trpc/           # tRPC client/provider
 │   └── server/
 │       ├── db/             # Database schema and connection
-│       └── trpc/           # tRPC routers (user, vault)
+│       └── trpc/           # tRPC routers (user, vault, settings)
 ├── drizzle/                # Database migrations
 ├── public/
 │   ├── manifest.json       # PWA manifest with share target
@@ -161,11 +164,12 @@ pnpm dev
 | `VNC_PASSWORD` | `obsidian` | Password for VNC remote access |
 | `SCREEN_RESOLUTION` | `1280x720x24` | Virtual display resolution |
 | `DATABASE_URL` | `./data/ob-share.db` | SQLite database path |
-| `VAULT_ROOT` | `/home/obsidian/vault` | Path to Obsidian vault root |
 | `BETTER_AUTH_SECRET` | (required) | Secret for session encryption |
 | `BETTER_AUTH_URL` | `http://localhost:3000` | Base URL for auth callbacks |
 | `GITHUB_CLIENT_ID` | (required) | GitHub OAuth client ID |
 | `GITHUB_CLIENT_SECRET` | (required) | GitHub OAuth client secret |
+
+**Note:** Vault path configuration has moved to in-app settings. See [Vault Settings](#vault-settings) below.
 
 ### Volumes
 
@@ -210,6 +214,26 @@ The application uses a GitHub username allow list to restrict access. Initial us
 - `tomsjansons`
 
 To add more users, you can directly insert into the `allow_list` table in the SQLite database.
+
+### Vault Settings
+
+Each user must configure their vault settings before sharing content. Access the settings page from the Account page.
+
+| Setting | Description | Example |
+|---------|-------------|---------|
+| Vault Name | Name of your Obsidian vault folder | `my-vault` |
+| Incoming Folder | Folder inside vault for shared content | `incoming` or `inbox/shared` |
+
+**Destination Path:** Files are saved to `/data/Documents/{vault-name}/{incoming-folder}/`
+
+For example, with vault name `my-notes` and incoming folder `inbox`:
+- Shared content saves to `/data/Documents/my-notes/inbox/`
+
+**Important:**
+- Both settings are required before sharing works
+- Do not include leading or trailing slashes
+- The app shows an "Incomplete Setup" warning until configured
+- Settings are stored per-user in the database
 
 ## Architecture
 
@@ -372,14 +396,16 @@ When installed as a PWA, ob-share appears as a share target in Android's share m
 
 1. Share content from any app → Select "ob-share"
 2. If not logged in → Login prompt appears (share data preserved)
-3. After authentication → Shared content is displayed and automatically saved to vault
-4. Content is saved as a markdown file in the `incoming/` folder
+3. After authentication → Shared content is displayed
+4. If vault settings not configured → Warning shown with link to settings
+5. Once configured → Content automatically saved to vault
+6. Content is saved as a markdown file in the configured incoming folder
 
 ### Vault Integration
 
-Shared content is automatically saved to your Obsidian vault when received. Each share creates:
+Shared content is automatically saved to your Obsidian vault when received (after configuring vault settings). Each share creates:
 
-**Markdown Note:** `{vault}/incoming/{date}-{time}-{name}.md`
+**Markdown Note:** `/data/Documents/{vault-name}/{incoming-folder}/{date}-{time}-{name}.md`
 
 The note includes YAML frontmatter with metadata:
 ```yaml

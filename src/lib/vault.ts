@@ -1,9 +1,13 @@
 import { promises as fs } from "fs";
 import path from "path";
 
-// Vault configuration
-const VAULT_ROOT = process.env.VAULT_ROOT || "/home/obsidian/vault";
-const INCOMING_DIR = "incoming";
+// Base path for vault storage
+const DATA_ROOT = "/data/Documents";
+
+export interface VaultConfig {
+  vaultName: string;
+  incomingFolder: string;
+}
 
 export interface LocationInfo {
   country?: string;
@@ -26,6 +30,7 @@ export interface SaveToVaultOptions {
   url?: string;
   files?: VaultFile[];
   location?: LocationInfo;
+  vaultConfig: VaultConfig;
 }
 
 export interface VaultFile {
@@ -176,10 +181,17 @@ function generateMarkdownContent(options: SaveToVaultOptions, savedFileNames: st
 }
 
 /**
+ * Constructs the full vault path from config
+ */
+function getVaultPath(config: VaultConfig): string {
+  return path.join(DATA_ROOT, config.vaultName);
+}
+
+/**
  * Ensures the incoming directory exists
  */
-async function ensureIncomingDir(): Promise<string> {
-  const incomingPath = path.join(VAULT_ROOT, INCOMING_DIR);
+async function ensureIncomingDir(config: VaultConfig): Promise<string> {
+  const incomingPath = path.join(getVaultPath(config), config.incomingFolder);
   await fs.mkdir(incomingPath, { recursive: true });
   return incomingPath;
 }
@@ -189,7 +201,9 @@ async function ensureIncomingDir(): Promise<string> {
  */
 export async function saveToVault(options: SaveToVaultOptions): Promise<SaveResult> {
   try {
-    const incomingPath = await ensureIncomingDir();
+    const { vaultConfig } = options;
+    const vaultPath = getVaultPath(vaultConfig);
+    const incomingPath = await ensureIncomingDir(vaultConfig);
     const timestamp = getTimestamp();
     const created = new Date();
 
@@ -235,7 +249,7 @@ export async function saveToVault(options: SaveToVaultOptions): Promise<SaveResu
 
     return {
       success: true,
-      notePath: path.relative(VAULT_ROOT, notePath),
+      notePath: path.relative(vaultPath, notePath),
       savedFiles: savedFileNames,
     };
   } catch (error) {
