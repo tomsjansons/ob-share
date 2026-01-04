@@ -30,7 +30,7 @@ primary_region = 'arn'
 [env]
   DATABASE_URL = "/data/ob-share.db"
   BETTER_AUTH_URL = "https://ob-share.fly.dev"
-  HOSTNAME = "0.0.0.0"
+  HOSTNAME = "::"
   PORT = "3000"
 
 [[mounts]]
