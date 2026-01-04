@@ -36,10 +36,10 @@ primary_region = 'fra'
   HOSTNAME = "0.0.0.0"
   PORT = "3000"
 
-[[mounts]]
-  source = 'obsidian_data'
-  destination = '/data'
-  initial_size = '1gb'
+#[[mounts]]
+#  source = 'obsidian_data'
+#  destination = '/data'
+#  initial_size = '1gb'
 
 [[vm]]
   memory = '1gb'
