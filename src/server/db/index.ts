@@ -9,6 +9,8 @@ const logger = baseLogger.child({ module: "database" });
 
 logger.info({ event: "db.module.loading" }, "Database module loading");
 
+console.log("[DB] Database module loading...");
+
 // Ensure data directory exists
 const dataDir = process.env.DATABASE_URL
   ? path.dirname(process.env.DATABASE_URL)
