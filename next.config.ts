@@ -13,9 +13,6 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  experimental: {
-    instrumentationHook: true,
-  },
 };
 
 export default withPWA(nextConfig);
