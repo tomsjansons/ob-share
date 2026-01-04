@@ -9,7 +9,7 @@ primary_region = 'fra'
 [build]
 
 [deploy]
-  strategy = "recreate"
+  strategy = "immediate"
 
 [http_service]
   internal_port = 3000
