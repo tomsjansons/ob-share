@@ -8,6 +8,8 @@ import { logger } from "./logger";
 // Create a child logger for auth operations
 const authLogger = logger.child({ module: "auth" });
 
+authLogger.info({ event: "auth.module.loading" }, "Auth module loading");
+
 // Helper function to create default settings for a new user
 async function createDefaultSettings(userId: string): Promise<void> {
   const now = new Date();
@@ -139,6 +141,8 @@ export const auth = betterAuth({
     },
   },
 });
+
+authLogger.info({ event: "auth.module.ready" }, "Auth module initialized");
 
 export { isUsernameAllowed };
 export type Session = typeof auth.$Infer.Session;
