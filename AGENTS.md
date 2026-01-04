@@ -181,6 +181,19 @@ The application uses Pino for structured logging across all backend operations.
 - **Logging Middleware:** All tRPC procedures are wrapped with logging middleware that logs start, complete, and error events
 - **Module Loggers:** Auth and vault modules create their own child loggers with `module` context
 
+### Log Formats
+
+| Environment | Format | Transport |
+|-------------|--------|-----------|
+| Development | Pretty-print with colors | `pino-pretty` |
+| Production | logfmt (key=value pairs) | `pino-logfmt` |
+
+Production logs use logfmt format with these options:
+- `flattenNestedObjects`: Nested objects are flattened with underscore separator
+- `convertToSnakeCase`: Keys are converted to snake_case
+- `includeLevelLabel`: Level name is included (e.g., `level_label=info`)
+- `formatTime`: Timestamps are formatted as ISO 8601
+
 ### Log Events
 
 All logs use structured event names for easy filtering:
