@@ -2,6 +2,16 @@ import pino from "pino";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+// Track when the logger module was first loaded (process start time reference)
+const PROCESS_START_TIME = Date.now();
+
+/**
+ * Get elapsed time since process start in milliseconds
+ */
+export function getElapsedMs(): number {
+  return Date.now() - PROCESS_START_TIME;
+}
+
 /**
  * Pino logger configuration
  * - In development: pretty-print with colors
@@ -28,6 +38,14 @@ export const logger = pino({
         },
       },
 });
+
+// Log when logger is first initialized
+logger.info({
+  event: "logger.init",
+  elapsedMs: getElapsedMs(),
+  nodeEnv: process.env.NODE_ENV,
+  pid: process.pid,
+}, "Logger initialized");
 
 /**
  * Create a child logger with additional context

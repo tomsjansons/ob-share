@@ -3,12 +3,13 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/server/db";
 import * as schema from "@/server/db/schema";
 import { eq } from "drizzle-orm";
-import { logger } from "./logger";
+import { logger, getElapsedMs } from "./logger";
 
 // Create a child logger for auth operations
 const authLogger = logger.child({ module: "auth" });
 
-authLogger.info({ event: "auth.module.loading" }, "Auth module loading");
+const authModuleStart = Date.now();
+authLogger.info({ event: "auth.module.loading", elapsedMs: getElapsedMs() }, "Auth module loading");
 
 // Helper function to create default settings for a new user
 async function createDefaultSettings(userId: string): Promise<void> {
@@ -142,7 +143,12 @@ export const auth = betterAuth({
   },
 });
 
-authLogger.info({ event: "auth.module.ready" }, "Auth module initialized");
+const authModuleDuration = Date.now() - authModuleStart;
+authLogger.info({
+  event: "auth.module.ready",
+  elapsedMs: getElapsedMs(),
+  initDurationMs: authModuleDuration,
+}, "Auth module initialized");
 
 export { isUsernameAllowed };
 export type Session = typeof auth.$Infer.Session;
