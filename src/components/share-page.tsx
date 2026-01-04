@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Check, Share2, ArrowLeft, Image, Music, Video, FileText, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Check, Share2, ArrowLeft, Image, Music, Video, FileText, Loader2, CheckCircle2, XCircle, AlertTriangle, Settings } from "lucide-react";
 import Link from "next/link";
 import type { SharedFile } from "@/lib/share-store";
 import { trpc } from "@/lib/trpc/client";
@@ -109,6 +109,9 @@ export function SharePage({ user, sharedData }: SharePageProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedPath, setSavedPath] = useState<string | null>(null);
 
+  const settingsQuery = trpc.settings.get.useQuery();
+  const isSettingsComplete = settingsQuery.data?.isComplete ?? false;
+
   const saveToVault = trpc.vault.saveSharedContent.useMutation({
     onSuccess: (result) => {
       if (result.success) {
@@ -130,9 +133,9 @@ export function SharePage({ user, sharedData }: SharePageProps) {
   const hasFiles = sharedData.files && sharedData.files.length > 0;
   const hasSharedContent = hasTextContent || hasFiles;
 
-  // Automatically save to vault when content is received
+  // Automatically save to vault when content is received and settings are complete
   useEffect(() => {
-    if (hasSharedContent && saveStatus === "idle") {
+    if (hasSharedContent && saveStatus === "idle" && isSettingsComplete) {
       setSaveStatus("saving");
       saveToVault.mutate({
         title: sharedData.title || undefined,
@@ -147,7 +150,7 @@ export function SharePage({ user, sharedData }: SharePageProps) {
         location: undefined,
       });
     }
-  }, [hasSharedContent, saveStatus, sharedData, saveToVault]);
+  }, [hasSharedContent, saveStatus, sharedData, saveToVault, isSettingsComplete]);
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -166,6 +169,27 @@ export function SharePage({ user, sharedData }: SharePageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Incomplete Setup Warning */}
+          {!settingsQuery.isLoading && !isSettingsComplete && (
+            <div className="flex flex-col gap-3 rounded-md bg-amber-50 border border-amber-200 p-4 text-amber-800">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">Incomplete Setup</p>
+                  <p className="text-sm text-amber-700">
+                    Vault settings must be configured before content can be saved.
+                  </p>
+                </div>
+              </div>
+              <Link href="/settings">
+                <Button size="sm" variant="outline" className="w-full border-amber-300 hover:bg-amber-100">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Configure Vault Settings
+                </Button>
+              </Link>
+            </div>
+          )}
+
           {sharedData.error && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
               {sharedData.error === "processing"

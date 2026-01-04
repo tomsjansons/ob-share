@@ -4,6 +4,24 @@ import { db } from "@/server/db";
 import * as schema from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 
+// Helper function to create default settings for a new user
+async function createDefaultSettings(userId: string): Promise<void> {
+  const now = new Date();
+  try {
+    await db.insert(schema.userSettings).values({
+      userId,
+      vaultName: null,
+      incomingFolder: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    console.log(`Created default settings for user ${userId}`);
+  } catch (error) {
+    // Settings may already exist, ignore
+    console.log(`Settings already exist for user ${userId}`);
+  }
+}
+
 // Helper function to check if a GitHub username is allowed
 async function isUsernameAllowed(username: string): Promise<boolean> {
   const result = await db
@@ -82,6 +100,16 @@ export const auth = betterAuth({
   },
   advanced: {
     cookiePrefix: "ob-share",
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          // Create default settings for the new user
+          await createDefaultSettings(user.id);
+        },
+      },
+    },
   },
 });
 
