@@ -274,7 +274,7 @@ The project is configured for Fly.io deployment with the following specification
 | CPU | 1 shared core |
 | Memory | 1 GB |
 | Volume | 1 GB persistent storage |
-| Auto-scaling | Enabled (auto-stop/start) |
+| Auto-stop | Disabled (always running) |
 
 #### Setting Secrets
 
