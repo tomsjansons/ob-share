@@ -4,7 +4,7 @@
 #
 
 app = 'ob-share'
-primary_region = 'fra'
+primary_region = 'arm'
 
 [build]
 
