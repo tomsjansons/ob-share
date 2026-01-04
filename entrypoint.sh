@@ -65,61 +65,14 @@ SCREEN_DEPTH=$(echo $SCREEN_RESOLUTION | cut -d'x' -f3)
 export SCREEN_WIDTH SCREEN_HEIGHT SCREEN_DEPTH
 
 # Run database migrations and seeding before starting services
-echo "[MIGRATION] Running database migrations..."
+echo "[MIGRATION] Running database migrations and seeding..."
 cd /app
 
-# Run drizzle-kit migrate directly via npx
-npx drizzle-kit migrate 2>&1 || echo "[MIGRATION] Migration failed or no migrations to run"
-
-echo "[MIGRATION] Drizzle-kit migration complete, running seeding..."
-
-# Seed the database with initial allow list
-node -e "
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
-
-const dbPath = process.env.DATABASE_URL || '/data/ob-share.db';
-const dbDir = path.dirname(dbPath);
-
-console.log('[MIGRATION] Seeding database at:', dbPath);
-
-if (!fs.existsSync(dbDir)) {
-    console.log('[MIGRATION] Creating database directory:', dbDir);
-    fs.mkdirSync(dbDir, { recursive: true });
+# Run migrations using the TypeScript migration script via tsx
+npx tsx scripts/migrate.ts 2>&1 || {
+    echo "[MIGRATION] Migration script failed, attempting drizzle-kit fallback..."
+    npx drizzle-kit migrate 2>&1 || echo "[MIGRATION] Drizzle-kit migrate also failed"
 }
-
-console.log('[MIGRATION] Opening database connection for seeding...');
-const db = new Database(dbPath);
-
-console.log('[MIGRATION] Setting pragmas...');
-db.pragma('journal_mode = WAL');
-db.pragma('busy_timeout = 30000'); // Wait up to 30s for locks
-
-// Create allow_list table if not exists
-console.log('[MIGRATION] Creating allow_list table if needed...');
-db.exec(\`
-    CREATE TABLE IF NOT EXISTS allow_list (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        github_username TEXT NOT NULL UNIQUE,
-        created_at INTEGER NOT NULL
-    )
-\`);
-
-// Insert initial user if not exists
-console.log('[MIGRATION] Inserting initial user...');
-const stmt = db.prepare('INSERT OR IGNORE INTO allow_list (github_username, created_at) VALUES (?, ?)');
-stmt.run('tomsjansons', Date.now());
-
-// Force WAL checkpoint to ensure all changes are written to main database
-console.log('[MIGRATION] Running WAL checkpoint...');
-db.pragma('wal_checkpoint(TRUNCATE)');
-
-console.log('[MIGRATION] Closing database connection...');
-db.close();
-
-console.log('[MIGRATION] Database seeded successfully');
-" || echo "[MIGRATION] Seeding completed (or already seeded)"
 
 echo "[MIGRATION] Database setup complete!"
 

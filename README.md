@@ -79,6 +79,8 @@ ob-share/
 │           ├── job-service.ts   # Job CRUD operations
 │           └── examples/        # Example job implementations
 ├── drizzle/                # Database migrations
+├── scripts/
+│   └── migrate.ts          # Database migration and seeding script
 ├── public/
 │   ├── manifest.json       # PWA manifest with share target
 │   ├── icon-192.svg        # PWA icon (192x192)
@@ -352,14 +354,17 @@ Since VNC (port 5900) is not exposed publicly, use `fly proxy` to create a secur
 
 ### Running Migrations
 
-Migrations run automatically on container startup. For manual migration:
+Migrations run automatically on container startup using a TypeScript migration script that handles both Drizzle migrations and database seeding.
 
 ```bash
 # Generate migration from schema changes
 pnpm db:generate
 
-# Apply migrations
+# Run migrations with Drizzle Kit (interactive, for development)
 pnpm db:migrate
+
+# Run migrations programmatically (used by entrypoint, includes seeding)
+pnpm db:migrate:run
 
 # Push schema directly (development only)
 pnpm db:push
@@ -367,6 +372,13 @@ pnpm db:push
 # Open Drizzle Studio (database GUI)
 pnpm db:studio
 ```
+
+### Migration Script
+
+The `scripts/migrate.ts` script handles:
+1. Running Drizzle migrations from the `drizzle/` folder
+2. Seeding the `allow_list` table with initial users
+3. Creating default settings for existing users
 
 ## Progressive Web App (PWA)
 
