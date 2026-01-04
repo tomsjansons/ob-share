@@ -109,7 +109,7 @@ COPY package.json /app/
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY entrypoint.sh /entrypoint.sh
 COPY scripts /app/scripts
-RUN chmod +x /entrypoint.sh && chmod +x /app/scripts/*.sh
+RUN chmod +x /entrypoint.sh && (chmod +x /app/scripts/*.sh 2>/dev/null || true)
 
 # Environment variables
 ENV DISPLAY=:5

@@ -334,3 +334,48 @@ await createJob({
 3. **Conditional Execution**: Use `shouldRun` to skip phases based on conditions
 4. **Error Handling**: Return `{ success: false, error: "message", shouldRetry: true }` for retryable errors
 5. **Early Exit**: Return `{ success: true, skipRemaining: true }` to complete job early
+
+## Database Migrations
+
+The application uses Drizzle ORM for database management with a custom migration script for production deployments.
+
+### Key Migration Files
+
+| File | Purpose |
+|------|---------|
+| `scripts/migrate.ts` | TypeScript migration script for production |
+| `drizzle.config.ts` | Drizzle Kit configuration |
+| `drizzle/` | Generated SQL migration files |
+| `src/server/db/schema.ts` | Drizzle ORM schema definitions |
+| `src/server/db/seed.ts` | Development seed script (uses ORM) |
+
+### Migration Architecture
+
+The `scripts/migrate.ts` script is a standalone TypeScript file that:
+1. Opens a direct SQLite connection (without the app's logger dependencies)
+2. Runs Drizzle migrations using `drizzle-orm/better-sqlite3/migrator`
+3. Seeds the `allow_list` table with initial users
+4. Creates default `user_settings` for users who don't have them
+
+### Adding New Migrations
+
+1. Modify the schema in `src/server/db/schema.ts`
+2. Generate migration: `pnpm db:generate`
+3. Review the generated SQL in `drizzle/`
+4. Test locally: `pnpm db:migrate:run`
+
+### Seeding Data
+
+To add new seed data:
+1. Update `scripts/migrate.ts` with additional seeding logic
+2. Ensure seeding is idempotent (uses `INSERT OR IGNORE` or checks for existing data)
+3. Update `src/server/db/seed.ts` for development consistency
+
+### Modifying Migration Behavior
+
+| Change | Files to Update |
+|--------|-----------------|
+| Add new table | `src/server/db/schema.ts`, then `pnpm db:generate` |
+| Add seed data | `scripts/migrate.ts` (production), `src/server/db/seed.ts` (development) |
+| Change database location | `drizzle.config.ts`, environment variable `DATABASE_URL` |
+| Modify migration script | `scripts/migrate.ts` |
