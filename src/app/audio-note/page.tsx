@@ -1,9 +1,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { SettingsPage } from "@/components/settings-page";
+import { AudioNotePage } from "@/components/audio-note-page";
 
-export default async function Settings() {
+export default async function AudioNote() {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -12,5 +12,5 @@ export default async function Settings() {
     redirect("/");
   }
 
-  return <SettingsPage user={session.user} />;
+  return <AudioNotePage user={session.user} />;
 }

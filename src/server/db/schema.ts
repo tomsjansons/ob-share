@@ -66,6 +66,14 @@ export const allowList = sqliteTable("allow_list", {
  */
 export type LocationPermissionStatus = "not_asked" | "granted" | "denied";
 
+/**
+ * Audio permission status enum values:
+ * - not_asked: User hasn't been asked for audio permission yet
+ * - granted: User has granted audio permission
+ * - denied: User has denied audio permission
+ */
+export type AudioPermissionStatus = "not_asked" | "granted" | "denied";
+
 // User settings table for vault configuration
 export const userSettings = sqliteTable("user_settings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -77,6 +85,10 @@ export const userSettings = sqliteTable("user_settings", {
   incomingFolder: text("incoming_folder"),
   locationPermission: text("location_permission")
     .$type<LocationPermissionStatus>()
+    .notNull()
+    .default("not_asked"),
+  audioPermission: text("audio_permission")
+    .$type<AudioPermissionStatus>()
     .notNull()
     .default("not_asked"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),

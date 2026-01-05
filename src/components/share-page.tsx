@@ -14,6 +14,7 @@ import Link from "next/link";
 import type { SharedFile } from "@/lib/share-store";
 import { trpc } from "@/lib/trpc/client";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AvatarDropdown } from "@/components/avatar-dropdown";
 import { LocationPermissionModal } from "@/components/location-permission-modal";
 import { getLocation, isGeolocationSupported } from "@/lib/location";
 import type { LocationInfo } from "@/lib/vault";
@@ -232,11 +233,21 @@ export function SharePage({ user, sharedData }: SharePageProps) {
         onClose={handleLocationModalClose}
       />
 
-      <div className="relative flex min-h-screen items-center justify-center p-4">
-        <div className="absolute top-4 right-4">
-          <ThemeToggle />
-        </div>
-        <Card className="w-full max-w-md">
+      <div className="relative min-h-screen bg-background">
+        {/* Header */}
+        <header className="flex items-center justify-between p-4">
+          <Link href="/dashboard" className="text-lg font-semibold hover:text-primary">
+            ob-share
+          </Link>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <AvatarDropdown user={user} />
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="flex flex-col items-center justify-center px-4 py-8">
+          <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mb-2 flex justify-center">
               <Share2 className="h-12 w-12 text-primary" />
@@ -405,14 +416,15 @@ export function SharePage({ user, sharedData }: SharePageProps) {
             </p>
           )}
 
-          <Link href="/account" className="block">
+          <Link href="/dashboard" className="block">
             <Button variant="outline" className="w-full">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Account
+              Back to Dashboard
             </Button>
           </Link>
         </CardContent>
       </Card>
+        </main>
       </div>
     </>
   );

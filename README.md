@@ -48,9 +48,14 @@ ob-share/
 ├── src/
 │   ├── app/                # Next.js App Router pages
 │   │   ├── page.tsx        # Landing page (logged out)
-│   │   ├── account/        # Account page (logged in)
-│   │   ├── settings/       # Vault settings configuration
+│   │   ├── dashboard/      # Main dashboard (logged in)
+│   │   │   └── page.tsx    # Dashboard page with audio note button
+│   │   ├── account/        # Account details section
+│   │   │   └── page.tsx    # Account page
+│   │   ├── settings/       # Vault and permission settings
 │   │   │   └── page.tsx    # Settings page
+│   │   ├── audio-note/     # Audio note recording
+│   │   │   └── page.tsx    # Audio recording page
 │   │   ├── share/          # Web Share Target display
 │   │   │   └── page.tsx    # Share page (displays & saves content)
 │   │   └── api/            # API routes
@@ -58,9 +63,14 @@ ob-share/
 │   │       ├── share/      # Share target POST handler
 │   │       └── trpc/       # tRPC API endpoints
 │   ├── components/         # React components
+│   │   ├── dashboard-page.tsx # Main dashboard with audio note button
+│   │   ├── account-page.tsx  # User account details
+│   │   ├── avatar-dropdown.tsx # User avatar with dropdown menu
 │   │   ├── share-page.tsx  # Share target authenticated view
 │   │   ├── share-login.tsx # Share target login prompt
-│   │   ├── settings-page.tsx # Vault settings configuration
+│   │   ├── settings-page.tsx # Vault and permission settings
+│   │   ├── audio-note-page.tsx # Audio recording interface
+│   │   ├── audio-permission-modal.tsx # Microphone permission dialog
 │   │   ├── location-permission-modal.tsx # Location permission request dialog
 │   │   └── ui/             # shadcn/ui components
 │   ├── lib/                # Shared utilities
@@ -69,6 +79,7 @@ ob-share/
 │   │   ├── share-store.ts  # Temporary storage for shared files
 │   │   ├── vault.ts        # Obsidian vault file operations
 │   │   ├── location.ts     # Geolocation and reverse geocoding
+│   │   ├── audio.ts        # Audio recording and permission utilities
 │   │   └── trpc/           # tRPC client/provider
 │   └── server/
 │       ├── db/             # Database schema and connection
@@ -260,13 +271,14 @@ To add more users, you can directly insert into the `allow_list` table in the SQ
 
 ### Vault Settings
 
-Each user must configure their vault settings before sharing content. Access the settings page from the Account page.
+Each user must configure their vault settings before sharing content. Access the settings page from the Dashboard via the avatar dropdown.
 
 | Setting | Description | Example |
 |---------|-------------|---------|
 | Vault Name | Name of your Obsidian vault folder | `my-vault` |
 | Incoming Folder | Folder inside vault for shared content | `incoming` or `inbox/shared` |
 | Location Sharing | Include location data in shared notes | Enabled/Disabled |
+| Audio Recording | Allow recording audio notes | Enabled/Disabled |
 
 **Destination Path:** Files are saved to `/data/Documents/{vault-name}/{incoming-folder}/`
 
@@ -304,6 +316,50 @@ ob-share can include location data with your shared notes to help you remember w
 - Location is determined using your device's GPS and reverse geocoding via OpenStreetMap (Nominatim)
 - Location data is only saved to your notes, never stored on our servers
 - You can disable location sharing at any time from Settings
+
+### Audio Notes
+
+ob-share allows you to record audio notes directly from the dashboard and save them to your Obsidian vault.
+
+**How it works:**
+1. From the dashboard, tap the large microphone button to start recording
+2. On first use, the app will ask for microphone permission
+3. Once granted, recording starts automatically
+4. Tap "Stop & Save" to end the recording
+5. The audio file is saved to your vault with a markdown note containing metadata
+
+**Audio note features:**
+- Recording starts automatically when you open the audio note page
+- Visual feedback shows recording status and duration
+- Location data is included if location sharing is enabled
+- Audio is saved in WebM format (with Opus codec) for broad compatibility
+- Each recording creates both an audio file and a linked markdown note
+
+**Managing audio permissions:**
+- First-time prompt appears when you tap the audio note button
+- Manually enable/disable in the Settings page
+- If you deny permission in the browser, you'll need to reset it in browser settings
+
+**Privacy:**
+- Audio is recorded only when you initiate recording
+- Recordings are saved directly to your vault, never uploaded to external servers
+- You can disable audio recording at any time from Settings
+
+### Navigation
+
+The app uses a consistent header across all pages with an avatar dropdown menu in the top right corner.
+
+**Avatar Dropdown Menu:**
+- **Account** - View your account details and user information
+- **Settings** - Configure vault settings and manage permissions
+- **Sign out** - Log out of the application
+
+**Main Pages:**
+- **Dashboard** (`/dashboard`) - Main page after login with audio note button
+- **Account** (`/account`) - User account details
+- **Settings** (`/settings`) - Vault configuration, location and audio permissions
+- **Audio Note** (`/audio-note`) - Audio recording interface
+- **Share** (`/share`) - Displays content shared from other apps
 
 ## Architecture
 
