@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../trpc";
 import { db } from "@/server/db";
-import { userSettings, type LocationPermissionStatus } from "@/server/db/schema";
+import { userSettings, type LocationPermissionStatus, type AudioPermissionStatus } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 
 export const settingsRouter = router({
@@ -30,6 +30,7 @@ export const settingsRouter = router({
         vaultName: null,
         incomingFolder: null,
         locationPermission: "not_asked",
+        audioPermission: "not_asked",
         createdAt: now,
         updatedAt: now,
       });
@@ -38,23 +39,26 @@ export const settingsRouter = router({
         vaultName: null,
         incomingFolder: null,
         locationPermission: "not_asked" as LocationPermissionStatus,
+        audioPermission: "not_asked" as AudioPermissionStatus,
         isComplete: false,
       };
     }
 
-    const { vaultName, incomingFolder, locationPermission } = settings[0];
+    const { vaultName, incomingFolder, locationPermission, audioPermission } = settings[0];
     const isComplete = Boolean(vaultName && incomingFolder);
 
     logger.debug({
       event: "settings.get.complete",
       isComplete,
       locationPermission,
+      audioPermission,
     });
 
     return {
       vaultName,
       incomingFolder,
       locationPermission,
+      audioPermission,
       isComplete,
     };
   }),
@@ -179,6 +183,64 @@ export const settingsRouter = router({
       return {
         success: true,
         locationPermission: input.locationPermission,
+      };
+    }),
+
+  updateAudioPermission: protectedProcedure
+    .input(
+      z.object({
+        audioPermission: z.enum(["not_asked", "granted", "denied"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { logger } = ctx;
+
+      logger.info({
+        event: "settings.updateAudioPermission.start",
+        audioPermission: input.audioPermission,
+      });
+
+      const existingSettings = await db
+        .select()
+        .from(userSettings)
+        .where(eq(userSettings.userId, ctx.session.user.id))
+        .limit(1);
+
+      const now = new Date();
+
+      if (existingSettings.length === 0) {
+        await db.insert(userSettings).values({
+          userId: ctx.session.user.id,
+          vaultName: null,
+          incomingFolder: null,
+          locationPermission: "not_asked",
+          audioPermission: input.audioPermission,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        logger.info({
+          event: "settings.updateAudioPermission.created",
+          audioPermission: input.audioPermission,
+        });
+      } else {
+        await db
+          .update(userSettings)
+          .set({
+            audioPermission: input.audioPermission,
+            updatedAt: now,
+          })
+          .where(eq(userSettings.userId, ctx.session.user.id));
+
+        logger.info({
+          event: "settings.updateAudioPermission.updated",
+          audioPermission: input.audioPermission,
+        });
+      }
+
+      return {
+        success: true,
+        audioPermission: input.audioPermission,
       };
     }),
 });

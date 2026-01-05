@@ -1,9 +1,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { SettingsPage } from "@/components/settings-page";
+import { DashboardPage } from "@/components/dashboard-page";
 
-export default async function Settings() {
+export default async function Dashboard() {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -12,5 +12,5 @@ export default async function Settings() {
     redirect("/");
   }
 
-  return <SettingsPage user={session.user} />;
+  return <DashboardPage user={session.user} />;
 }

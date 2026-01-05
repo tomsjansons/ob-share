@@ -31,6 +31,8 @@ Instructions for AI agents working on this repository.
 | New issues/fixes | Troubleshooting |
 | PWA changes | Progressive Web App (PWA) |
 | Share target changes | Progressive Web App (PWA) > Web Share Target |
+| Dashboard changes | Navigation |
+| Audio feature changes | Audio Notes |
 
 ## Guidelines
 
@@ -39,6 +41,44 @@ Instructions for AI agents working on this repository.
 - Update version numbers when applicable
 - Remove outdated information
 - Test any commands or instructions you document
+
+## Navigation and Dashboard
+
+The app uses a consistent layout pattern with a header containing the logo, theme toggle, and avatar dropdown menu.
+
+### Key Navigation Files
+
+| File | Purpose |
+|------|---------|
+| `src/app/dashboard/page.tsx` | Main dashboard route (entry point after login) |
+| `src/components/dashboard-page.tsx` | Dashboard with audio note button |
+| `src/components/avatar-dropdown.tsx` | User menu with Account/Settings/Sign out |
+| `src/components/theme-toggle.tsx` | Theme switcher (light/dark/system) |
+
+### Navigation Structure
+
+After login, users land on `/dashboard`. All pages have a consistent header:
+- **Logo/Title** (left) - Links back to dashboard
+- **Theme Toggle** (right) - Sun/moon icon
+- **Avatar Dropdown** (right) - User menu with navigation links
+
+### Avatar Dropdown Menu
+
+The avatar dropdown (`src/components/avatar-dropdown.tsx`) provides:
+- User name and email display
+- Link to Account page
+- Link to Settings page
+- Sign out button
+
+### Adding New Pages with Navigation
+
+1. Create the route in `src/app/{page-name}/page.tsx`
+2. Create the component in `src/components/{page-name}-page.tsx`
+3. Include the standard header with:
+   - `<Link href="/dashboard">` for logo
+   - `<ThemeToggle />` for theme switching
+   - `<AvatarDropdown user={user} />` for user menu
+4. Optionally add to avatar dropdown if it's a primary navigation destination
 
 ## PWA and Share Target
 
@@ -53,6 +93,7 @@ The app includes Progressive Web App functionality with Web Share Target API sup
 | `public/icon-512.svg` | App icon (512x512) |
 | `next.config.ts` | PWA plugin configuration (@ducanh2912/next-pwa) |
 | `src/app/layout.tsx` | PWA meta tags and manifest link |
+| `src/app/dashboard/page.tsx` | Main dashboard page |
 | `src/app/share/page.tsx` | Share target handler (server component) |
 | `src/app/settings/page.tsx` | Vault settings page |
 | `src/components/share-page.tsx` | Authenticated share view |
@@ -167,6 +208,56 @@ The app includes location sharing functionality that adds geographic context to 
 | `src/components/location-permission-modal.tsx` | Permission request dialog |
 | `src/components/ui/dialog.tsx` | Base dialog component |
 | `src/server/db/schema.ts` | `locationPermission` field in `user_settings` table |
+
+## Audio Notes
+
+The app includes audio note recording functionality for capturing voice notes directly to the Obsidian vault.
+
+### Key Audio Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/audio.ts` | Audio recording utilities and permission handling |
+| `src/components/audio-note-page.tsx` | Audio recording interface |
+| `src/components/audio-permission-modal.tsx` | Microphone permission request dialog |
+| `src/app/audio-note/page.tsx` | Audio note route handler |
+| `src/server/db/schema.ts` | `audioPermission` field in `user_settings` table |
+
+### Audio Recording Flow
+
+1. User taps audio note button on dashboard
+2. If `audioPermission` is `not_asked`, show permission modal
+3. If permission granted, navigate to audio note page
+4. Recording starts automatically on page load
+5. User taps "Stop & Save" to end recording
+6. If location permission granted, location data is fetched
+7. Audio file and markdown note saved to vault via `vault.saveSharedContent`
+
+### Audio Permission Status
+
+Stored in `user_settings.audioPermission`:
+- `not_asked`: User hasn't been prompted yet (show modal on first audio note)
+- `granted`: User allowed microphone access
+- `denied`: User denied or disabled microphone access
+
+### AudioRecorder Class
+
+The `AudioRecorder` class in `src/lib/audio.ts` provides:
+- `start()` - Start recording audio
+- `stop()` - Stop recording and return audio data as blob/dataUrl
+- `cancel()` - Cancel recording without saving
+- `getState()` - Get current recording state
+- `getDuration()` - Get current recording duration
+
+### Modifying Audio Behavior
+
+| Change | Files to Update |
+|--------|-----------------|
+| Change audio format | `src/lib/audio.ts` - `getSupportedMimeType()` function |
+| Modify permission UI | `src/components/audio-permission-modal.tsx` |
+| Change recording UI | `src/components/audio-note-page.tsx` |
+| Change settings UI | `src/components/settings-page.tsx` |
+| Modify permission storage | `src/server/trpc/routers/settings.ts`
 
 ### Location Permission Flow
 
