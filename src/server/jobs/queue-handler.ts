@@ -193,17 +193,41 @@ export class QueueHandler {
    */
   private async poll(): Promise<void> {
     if (!this.isRunning || this.isStopping) {
+      logger.debug({
+        event: "queue.poll.skip",
+        handlerId: this.config.handlerId,
+        isRunning: this.isRunning,
+        isStopping: this.isStopping,
+      });
       return;
     }
 
+    logger.info({
+      event: "queue.poll.start",
+      handlerId: this.config.handlerId,
+      currentJobs: this.currentJobs.size,
+      concurrency: this.config.concurrency,
+    });
+
     try {
-      await this.processPendingJobs();
+      const processed = await this.processPendingJobs();
+      logger.info({
+        event: "queue.poll.complete",
+        handlerId: this.config.handlerId,
+        jobsProcessed: processed,
+        currentJobs: this.currentJobs.size,
+      });
     } catch (err) {
       logger.error({ event: "queue.poll.error", err, handlerId: this.config.handlerId }, "Error during poll");
     }
 
     // Schedule next poll
     if (this.isRunning && !this.isStopping) {
+      logger.debug({
+        event: "queue.poll.scheduling_next",
+        handlerId: this.config.handlerId,
+        nextPollMs: this.config.pollInterval,
+      });
       this.pollTimer = setTimeout(() => this.poll(), this.config.pollInterval);
     }
   }
@@ -212,12 +236,23 @@ export class QueueHandler {
    * Process all pending jobs
    */
   private async processPendingJobs(): Promise<number> {
+    logger.debug({
+      event: "queue.process.start",
+      handlerId: this.config.handlerId,
+    });
+
     // First, handle stalled jobs (visibility timeout expired)
     await this.handleStalledJobs();
 
     // Get available slots
     const availableSlots = this.config.concurrency - this.currentJobs.size;
     if (availableSlots <= 0) {
+      logger.debug({
+        event: "queue.process.no_slots",
+        handlerId: this.config.handlerId,
+        currentJobs: this.currentJobs.size,
+        concurrency: this.config.concurrency,
+      });
       return 0;
     }
 
@@ -240,19 +275,54 @@ export class QueueHandler {
       .orderBy(asc(jobs.priority), asc(jobs.createdAt))
       .limit(availableSlots);
 
+    logger.info({
+      event: "queue.process.jobs_found",
+      handlerId: this.config.handlerId,
+      pendingJobsCount: pendingJobs.length,
+      availableSlots,
+      jobIds: pendingJobs.map(j => j.id),
+      jobTypes: pendingJobs.map(j => j.type),
+    });
+
     let processedCount = 0;
 
     for (const job of pendingJobs) {
+      logger.debug({
+        event: "queue.process.claiming_job",
+        handlerId: this.config.handlerId,
+        jobId: job.id,
+        jobType: job.type,
+      });
+
       // Try to claim the job by updating visibility timeout
       const claimed = await this.claimJob(job.id);
       if (claimed) {
         processedCount++;
+        logger.info({
+          event: "queue.process.job_claimed",
+          handlerId: this.config.handlerId,
+          jobId: job.id,
+          jobType: job.type,
+        });
         // Process job in background (don't await)
         this.processJob(job as JobRecord).catch((err) => {
           logger.error({ event: "job.process.error", jobId: job.id, jobType: job.type, err }, "Error processing job");
         });
+      } else {
+        logger.debug({
+          event: "queue.process.job_claim_failed",
+          handlerId: this.config.handlerId,
+          jobId: job.id,
+          reason: "Job was claimed by another handler or status changed",
+        });
       }
     }
+
+    logger.debug({
+      event: "queue.process.complete",
+      handlerId: this.config.handlerId,
+      processedCount,
+    });
 
     return processedCount;
   }
