@@ -155,8 +155,8 @@ export const workflowExecutionJob = defineJob<WorkflowJobPayload>({
     // Phase 2: Execute workflow
     {
       name: "execute",
-      async execute(ctx: PhaseContext<WorkflowJobPayload, { instanceId: string; workflowId: string; startTime: number }>) {
-        const input = ctx.phase.input;
+      async execute(ctx) {
+        const input = ctx.phase.input as { instanceId: string; workflowId: string; startTime: number } | undefined;
         if (!input) {
           return {
             success: false,
@@ -246,8 +246,8 @@ export const workflowExecutionJob = defineJob<WorkflowJobPayload>({
     // Phase 3: Finalize and cleanup
     {
       name: "finalize",
-      async execute(ctx: PhaseContext<WorkflowJobPayload, WorkflowJobResult>) {
-        const input = ctx.phase.input;
+      async execute(ctx) {
+        const input = ctx.phase.input as WorkflowJobResult | undefined;
         if (!input) {
           return {
             success: false,

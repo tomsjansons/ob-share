@@ -7,7 +7,8 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { z } from "zod";
-import { defineTool, type ToolContext, type ToolResult } from "../steps/tool-step";
+import { defineTool } from "../steps/tool-step";
+import type { ToolContext, ToolResult } from "../types";
 
 /**
  * Read file tool

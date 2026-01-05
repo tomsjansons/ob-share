@@ -510,7 +510,9 @@ export const randomTool = defineTool({
   }),
   outputSchema: z.object({ value: z.number() }),
   execute: async (input) => {
-    const value = Math.random() * (input.max - input.min) + input.min;
+    const min = input.min ?? 0;
+    const max = input.max ?? 1;
+    const value = Math.random() * (max - min) + min;
     return {
       success: true,
       output: { value },
