@@ -61,12 +61,14 @@ ob-share/
 │   │   ├── share-page.tsx  # Share target authenticated view
 │   │   ├── share-login.tsx # Share target login prompt
 │   │   ├── settings-page.tsx # Vault settings configuration
+│   │   ├── location-permission-modal.tsx # Location permission request dialog
 │   │   └── ui/             # shadcn/ui components
 │   ├── lib/                # Shared utilities
 │   │   ├── auth.ts         # Better Auth configuration
 │   │   ├── auth-client.ts  # Client-side auth
 │   │   ├── share-store.ts  # Temporary storage for shared files
 │   │   ├── vault.ts        # Obsidian vault file operations
+│   │   ├── location.ts     # Geolocation and reverse geocoding
 │   │   └── trpc/           # tRPC client/provider
 │   └── server/
 │       ├── db/             # Database schema and connection
@@ -248,6 +250,7 @@ Each user must configure their vault settings before sharing content. Access the
 |---------|-------------|---------|
 | Vault Name | Name of your Obsidian vault folder | `my-vault` |
 | Incoming Folder | Folder inside vault for shared content | `incoming` or `inbox/shared` |
+| Location Sharing | Include location data in shared notes | Enabled/Disabled |
 
 **Destination Path:** Files are saved to `/data/Documents/{vault-name}/{incoming-folder}/`
 
@@ -255,10 +258,36 @@ For example, with vault name `my-notes` and incoming folder `inbox`:
 - Shared content saves to `/data/Documents/my-notes/inbox/`
 
 **Important:**
-- Both settings are required before sharing works
+- Both vault name and incoming folder settings are required before sharing works
 - Do not include leading or trailing slashes
 - The app shows an "Incomplete Setup" warning until configured
 - Settings are stored per-user in the database
+
+### Location Sharing
+
+ob-share can include location data with your shared notes to help you remember where you captured content.
+
+**How it works:**
+1. On your first share, ob-share will ask for location permission
+2. If granted, your notes will include location data (country, city, area, street)
+3. If the exact area can't be determined, GPS coordinates are used as a fallback
+4. If denied, notes are saved with "unknown" as the location
+
+**Location data includes (when available):**
+- Country
+- City/Town
+- Area/Neighborhood/Suburb
+- Street
+
+**Managing location permissions:**
+- First-time prompt appears automatically when sharing content
+- Manually enable/disable in the Settings page
+- If you deny permission in the browser, you'll need to reset it in browser settings
+
+**Privacy:**
+- Location is determined using your device's GPS and reverse geocoding via OpenStreetMap (Nominatim)
+- Location data is only saved to your notes, never stored on our servers
+- You can disable location sharing at any time from Settings
 
 ## Architecture
 
