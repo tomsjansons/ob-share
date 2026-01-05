@@ -10,11 +10,10 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { signOut } from "@/lib/auth-client";
-import { LogOut, Settings, AlertTriangle, ArrowLeft } from "lucide-react";
+import { LogOut, Settings, ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { trpc } from "@/lib/trpc/client";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AvatarDropdown } from "@/components/avatar-dropdown";
 
@@ -32,7 +31,6 @@ interface AccountPageProps {
 export function AccountPage({ user }: AccountPageProps) {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const settingsQuery = trpc.settings.get.useQuery();
 
   const handleSignOut = async () => {
     setIsLoading(true);
@@ -88,19 +86,6 @@ export function AccountPage({ user }: AccountPageProps) {
             <CardDescription>{user.email}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Incomplete Setup Warning */}
-            {settingsQuery.data && !settingsQuery.data.isComplete && (
-              <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-200">
-                <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-medium">Incomplete Setup</p>
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    Configure your vault settings to enable sharing.
-                  </p>
-                </div>
-              </div>
-            )}
-
             <div className="rounded-md border p-4 space-y-2">
               <div className="text-sm text-muted-foreground">Account Details</div>
               <div className="grid gap-2 text-sm">
@@ -123,10 +108,7 @@ export function AccountPage({ user }: AccountPageProps) {
             <Link href="/settings" className="block">
               <Button variant="outline" className="w-full">
                 <Settings className="mr-2 h-4 w-4" />
-                Vault Settings
-                {settingsQuery.data && !settingsQuery.data.isComplete && (
-                  <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">(Required)</span>
-                )}
+                Settings
               </Button>
             </Link>
 

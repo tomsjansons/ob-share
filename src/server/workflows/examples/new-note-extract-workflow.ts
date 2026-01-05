@@ -493,7 +493,11 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
       toolName: "extract-audio",
       input: (ctx) => {
         const trigger = ctx.trigger as NewNoteExtractTrigger;
-        const fileData = ctx.variables.fileData as { attachments: string[] };
+        const fileData = ctx.variables.fileData as { attachments?: string[] } | undefined;
+
+        if (!fileData?.attachments) {
+          throw new Error("No file data available");
+        }
 
         // Find the first audio attachment
         const audioExtensions = [".mp3", ".wav", ".ogg", ".webm", ".m4a"];
@@ -525,7 +529,11 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
       toolName: "extract-video",
       input: (ctx) => {
         const trigger = ctx.trigger as NewNoteExtractTrigger;
-        const fileData = ctx.variables.fileData as { attachments: string[] };
+        const fileData = ctx.variables.fileData as { attachments?: string[] } | undefined;
+
+        if (!fileData?.attachments) {
+          throw new Error("No file data available");
+        }
 
         const videoExtensions = [".mp4", ".webm", ".mov", ".avi", ".mkv"];
         const videoAttachment = fileData.attachments.find((a) =>
@@ -554,7 +562,11 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
       toolName: "extract-image",
       input: (ctx) => {
         const trigger = ctx.trigger as NewNoteExtractTrigger;
-        const fileData = ctx.variables.fileData as { attachments: string[] };
+        const fileData = ctx.variables.fileData as { attachments?: string[] } | undefined;
+
+        if (!fileData?.attachments) {
+          throw new Error("No file data available");
+        }
 
         const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
         const imageAttachment = fileData.attachments.find((a) =>
@@ -582,9 +594,9 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
       name: "Extract URL Content",
       toolName: "extract-url",
       input: (ctx) => {
-        const fileData = ctx.variables.fileData as { urls: string[] };
+        const fileData = ctx.variables.fileData as { urls?: string[] } | undefined;
 
-        if (fileData.urls.length === 0) {
+        if (!fileData?.urls || fileData.urls.length === 0) {
           throw new Error("No URLs found in content");
         }
 

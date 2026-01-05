@@ -178,6 +178,40 @@ export const workflowExecutionJob = defineJob<WorkflowJobPayload>({
         const orchestrator = getOrchestrator();
 
         try {
+          // Check if instance already completed or failed (e.g., from a previous retry attempt)
+          const existingInstance = orchestrator.getInstance(input.instanceId);
+          if (existingInstance) {
+            if (existingInstance.status === "completed") {
+              const duration = Date.now() - input.startTime;
+              return {
+                success: true,
+                output: {
+                  instanceId: existingInstance.id,
+                  workflowId: input.workflowId,
+                  status: "completed",
+                  result: existingInstance.result,
+                  executionPath: existingInstance.context.metadata.executionPath,
+                  duration,
+                },
+              };
+            }
+            if (existingInstance.status === "failed") {
+              // Don't retry a failed workflow - let the file checker handle retries
+              return {
+                success: false,
+                error: existingInstance.error ?? "Workflow execution failed",
+                shouldRetry: false,
+              };
+            }
+            if (existingInstance.status === "cancelled") {
+              return {
+                success: false,
+                error: "Workflow was cancelled",
+                shouldRetry: false,
+              };
+            }
+          }
+
           // Start the workflow execution
           await orchestrator.startInstance(input.instanceId);
 

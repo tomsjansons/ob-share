@@ -100,7 +100,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
                   <div>
                     <p className="font-medium">Setup Required</p>
                     <p className="text-sm text-amber-700 dark:text-amber-400">
-                      Configure your vault settings before creating audio notes.
+                      Configure your vault settings and OpenAI API key before creating audio notes.
                     </p>
                   </div>
                 </div>
@@ -111,42 +111,44 @@ export function DashboardPage({ user }: DashboardPageProps) {
                     className="w-full border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900"
                   >
                     <Settings className="mr-2 h-4 w-4" />
-                    Configure Vault Settings
+                    Configure Settings
                   </Button>
                 </Link>
               </div>
             </div>
           )}
 
-          {/* Audio Note Button */}
-          <Card className="w-full max-w-md">
-            <CardContent className="flex flex-col items-center justify-center py-12 px-6">
-              <p className="text-lg text-muted-foreground mb-6 text-center">
-                Tap to create a new audio note
-              </p>
-
-              <Button
-                size="lg"
-                onClick={handleAudioNoteClick}
-                disabled={!audioRecordingSupported}
-                className="h-32 w-32 rounded-full shadow-lg"
-              >
-                <Mic className="h-12 w-12" />
-              </Button>
-
-              {!audioRecordingSupported && (
-                <p className="text-sm text-muted-foreground mt-4 text-center">
-                  Audio recording is not supported in this browser
+          {/* Audio Note Button - only show when settings are complete */}
+          {isSettingsComplete && (
+            <Card className="w-full max-w-md">
+              <CardContent className="flex flex-col items-center justify-center py-12 px-6">
+                <p className="text-lg text-muted-foreground mb-6 text-center">
+                  Tap to create a new audio note
                 </p>
-              )}
 
-              {audioRecordingSupported && audioPermission === "denied" && (
-                <p className="text-sm text-amber-600 dark:text-amber-400 mt-4 text-center">
-                  Microphone access was denied. Tap to request permission again.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+                <Button
+                  size="lg"
+                  onClick={handleAudioNoteClick}
+                  disabled={!audioRecordingSupported}
+                  className="h-32 w-32 rounded-full shadow-lg"
+                >
+                  <Mic className="h-12 w-12" />
+                </Button>
+
+                {!audioRecordingSupported && (
+                  <p className="text-sm text-muted-foreground mt-4 text-center">
+                    Audio recording is not supported in this browser
+                  </p>
+                )}
+
+                {audioRecordingSupported && audioPermission === "denied" && (
+                  <p className="text-sm text-amber-600 dark:text-amber-400 mt-4 text-center">
+                    Microphone access was denied. Tap to request permission again.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Welcome message */}
           <p className="text-sm text-muted-foreground mt-8 text-center">
