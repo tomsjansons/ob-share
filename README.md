@@ -73,14 +73,30 @@ ob-share/
 │   └── server/
 │       ├── db/             # Database schema and connection
 │       ├── trpc/           # tRPC routers (user, vault, settings, queue)
-│       └── jobs/           # Async job queue system
-│           ├── types.ts    # Type definitions
-│           ├── base-job.ts # Base job class
-│           ├── queue-handler.ts # Queue polling and job execution
-│           ├── task-runner.ts   # Phase execution engine
-│           ├── scheduler.ts     # 30-min interval processing
-│           ├── job-service.ts   # Job CRUD operations
-│           └── examples/        # Example job implementations
+│       ├── jobs/           # Async job queue system
+│       │   ├── types.ts    # Type definitions
+│       │   ├── base-job.ts # Base job class
+│       │   ├── queue-handler.ts # Queue polling and job execution
+│       │   ├── task-runner.ts   # Phase execution engine
+│       │   ├── scheduler.ts     # 30-min interval processing
+│       │   ├── job-service.ts   # Job CRUD operations
+│       │   └── examples/        # Example job implementations
+│       └── workflows/      # Agentic workflow system
+│           ├── types.ts    # Workflow type definitions
+│           ├── base-workflow.ts # Workflow definition base class
+│           ├── orchestrator.ts  # Workflow execution engine
+│           ├── registry.ts      # Workflow registry
+│           ├── workflow-job.ts  # Job queue integration
+│           ├── steps/           # Step implementations
+│           │   ├── base-step.ts # Base step class
+│           │   ├── llm-step.ts  # LLM call step
+│           │   ├── tool-step.ts # Tool execution step
+│           │   ├── decision-step.ts # LLM decision step
+│           │   └── control-steps.ts # Parallel, transform, condition, loop
+│           ├── tools/           # Tool implementations
+│           │   ├── file-tools.ts # File system tools
+│           │   └── http-tools.ts # HTTP request tools
+│           └── examples/        # Example workflows
 ├── drizzle/                # Database migrations
 ├── scripts/
 │   └── migrate.ts          # Database migration and seeding script
@@ -650,6 +666,151 @@ The queue scheduler runs automatically with these defaults:
 | Heartbeat timeout | 2 minutes | Time before a handler is considered dead |
 | Cleanup interval | 6 hours | How often old jobs are cleaned up |
 | Job retention | 7 days | How long completed/failed jobs are kept |
+
+## Agentic Workflow System
+
+The application includes a powerful agentic workflow system built on top of the async job queue for building multi-step, LLM-driven automation.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| LLM Integration | Built-in support for Anthropic and OpenAI providers |
+| Structured Output | Zod schema-based structured responses from LLMs |
+| Tool System | Extensible tool system for file I/O, HTTP, and custom actions |
+| Decision Steps | LLM-driven routing between workflow branches |
+| Parallel Execution | Run multiple steps concurrently |
+| Fault Tolerance | Built on job queue with retries and error handling |
+| Event System | Real-time workflow and step execution events |
+
+### Workflow Architecture
+
+```
+┌─────────────┐     ┌──────────────────┐     ┌───────────────┐
+│   Trigger   │────▶│   Orchestrator   │────▶│    Steps      │
+│   (Input)   │     │   (Execution)    │     │ (LLM/Tools)   │
+└─────────────┘     └──────────────────┘     └───────────────┘
+                           │                        │
+                           ▼                        ▼
+                    ┌──────────────┐         ┌─────────────┐
+                    │   Registry   │         │   Result    │
+                    │  (Workflows) │         │  (Output)   │
+                    └──────────────┘         └─────────────┘
+```
+
+### Step Types
+
+| Type | Description |
+|------|-------------|
+| `llm-call` | Makes an LLM API call with structured output support |
+| `tool-call` | Executes a registered tool (file I/O, HTTP, etc.) |
+| `decision` | LLM evaluates context and picks next step(s) |
+| `parallel` | Runs multiple steps concurrently |
+| `transform` | Transforms data without LLM calls |
+| `condition` | Conditional branching based on expressions |
+| `loop` | Iterates over collections |
+
+### Defining a Workflow
+
+```typescript
+import {
+  workflow,
+  defineLLMStep,
+  defineDecisionStep,
+  defineToolStep,
+  WorkflowPriority,
+} from "@/server/workflows";
+import { z } from "zod";
+
+const myWorkflow = workflow("my-workflow", "My Workflow")
+  .description("Processes incoming content")
+  .priority(WorkflowPriority.NORMAL)
+  .trigger(z.object({ content: z.string() }))
+
+  // LLM classification step
+  .step(defineLLMStep({
+    id: "classify",
+    name: "Classify Content",
+    userPrompt: (ctx) => `Classify: ${ctx.trigger.content}`,
+    structuredOutput: {
+      schema: z.object({
+        category: z.string(),
+        confidence: z.number(),
+      }),
+    },
+  }))
+
+  // Decision step
+  .step(defineDecisionStep({
+    id: "decide",
+    name: "Decide Action",
+    prompt: "What should we do with this content?",
+    options: [
+      { id: "save", name: "Save", description: "Save to vault", nextStepId: "save-step" },
+      { id: "skip", name: "Skip", description: "Skip processing", nextStepId: "done" },
+    ],
+  }))
+
+  .entryStep("classify")
+  .transition("classify", "decide")
+  .build();
+```
+
+### Executing Workflows
+
+```typescript
+import { executeWorkflow, createWorkflowJob } from "@/server/workflows";
+
+// Direct execution (synchronous)
+const result = await executeWorkflow("my-workflow", {
+  content: "Hello world",
+});
+
+// Via job queue (asynchronous, fault-tolerant)
+const jobId = await createWorkflowJob({
+  workflowId: "my-workflow",
+  trigger: { content: "Hello world" },
+});
+```
+
+### Built-in Tools
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `read-file` | file | Read file contents |
+| `write-file` | file | Write content to file |
+| `append-file` | file | Append to file |
+| `file-exists` | file | Check file existence |
+| `list-directory` | file | List directory contents |
+| `http-request` | http | Make HTTP request |
+| `http-get` | http | Simple GET request |
+| `http-post` | http | Simple POST request |
+| `echo` | testing | Echo input back |
+| `delay` | testing | Wait for duration |
+
+### Creating Custom Tools
+
+```typescript
+import { defineTool, ToolRegistry } from "@/server/workflows";
+import { z } from "zod";
+
+const myTool = defineTool({
+  name: "my-tool",
+  description: "Does something useful",
+  category: "custom",
+  inputSchema: z.object({ input: z.string() }),
+  outputSchema: z.object({ result: z.string() }),
+  execute: async (input, context) => {
+    context.logger.info("Executing tool");
+    return {
+      success: true,
+      output: { result: `Processed: ${input.input}` },
+    };
+  },
+});
+
+ToolRegistry.register(myTool);
+```
 
 ## Security Considerations
 

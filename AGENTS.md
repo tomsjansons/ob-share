@@ -466,3 +466,151 @@ To add new seed data:
 | Add seed data | `scripts/migrate.ts` (production), `src/server/db/seed.ts` (development) |
 | Change database location | `drizzle.config.ts`, environment variable `DATABASE_URL` |
 | Modify migration script | `scripts/migrate.ts` |
+
+## Agentic Workflow System
+
+The app includes an agentic workflow system for building multi-step, LLM-driven automation on top of the async job queue.
+
+### Key Workflow Files
+
+| File | Purpose |
+|------|---------|
+| `src/server/workflows/types.ts` | Type definitions for workflows, steps, and tools |
+| `src/server/workflows/base-workflow.ts` | Base class and builder for defining workflows |
+| `src/server/workflows/orchestrator.ts` | Workflow execution engine |
+| `src/server/workflows/registry.ts` | Central registry for workflow definitions |
+| `src/server/workflows/workflow-job.ts` | Integration with async job queue |
+| `src/server/workflows/steps/base-step.ts` | Base step class with retry logic |
+| `src/server/workflows/steps/llm-step.ts` | LLM call step with structured output |
+| `src/server/workflows/steps/tool-step.ts` | Tool execution step |
+| `src/server/workflows/steps/decision-step.ts` | LLM-driven decision step |
+| `src/server/workflows/steps/control-steps.ts` | Parallel, transform, condition, loop steps |
+| `src/server/workflows/tools/file-tools.ts` | File system tools |
+| `src/server/workflows/tools/http-tools.ts` | HTTP request tools |
+| `src/server/workflows/examples/` | Example workflow implementations |
+
+### Workflow Concepts
+
+1. **Workflows**: Define the structure and flow of multi-step processes
+2. **Steps**: Individual units of work (LLM calls, tool calls, decisions, etc.)
+3. **Tools**: Reusable functions for file I/O, HTTP, and custom actions
+4. **Triggers**: Input data that starts a workflow
+5. **Orchestrator**: Manages workflow execution, state, and step scheduling
+
+### Creating a New Workflow
+
+1. Create a workflow definition file in `src/server/workflows/` or a subdirectory:
+```typescript
+import { workflow, defineLLMStep, WorkflowPriority } from "@/server/workflows";
+import { z } from "zod";
+
+export const myWorkflow = workflow("my-workflow", "My Workflow")
+  .description("Does something useful")
+  .priority(WorkflowPriority.NORMAL)
+  .trigger(z.object({ input: z.string() }))
+
+  .step(defineLLMStep({
+    id: "process",
+    name: "Process Input",
+    userPrompt: (ctx) => `Process this: ${ctx.trigger.input}`,
+  }))
+
+  .entryStep("process")
+  .build();
+```
+
+2. Register the workflow in your application startup:
+```typescript
+import { WorkflowRegistry } from "@/server/workflows";
+import { myWorkflow } from "./my-workflow";
+
+WorkflowRegistry.register(myWorkflow);
+```
+
+3. Execute workflows:
+```typescript
+import { executeWorkflow, createWorkflowJob } from "@/server/workflows";
+
+// Direct execution
+const result = await executeWorkflow("my-workflow", { input: "hello" });
+
+// Via job queue (recommended for production)
+const jobId = await createWorkflowJob({
+  workflowId: "my-workflow",
+  trigger: { input: "hello" },
+});
+```
+
+### Creating Custom Tools
+
+```typescript
+import { defineTool, ToolRegistry } from "@/server/workflows";
+import { z } from "zod";
+
+const myTool = defineTool({
+  name: "my-tool",
+  description: "Does something",
+  category: "custom",
+  inputSchema: z.object({ data: z.string() }),
+  outputSchema: z.object({ result: z.string() }),
+  execute: async (input, context) => {
+    // Tool implementation
+    return { success: true, output: { result: "done" } };
+  },
+});
+
+ToolRegistry.register(myTool);
+```
+
+### Step Types
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `llm-call` | Makes an LLM API call | Content analysis, generation, classification |
+| `tool-call` | Executes a registered tool | File I/O, HTTP requests, custom actions |
+| `decision` | LLM picks next step(s) | Dynamic routing based on context |
+| `parallel` | Runs steps concurrently | Independent parallel tasks |
+| `transform` | Transforms data | Data manipulation without LLM |
+| `condition` | Conditional branching | If/else logic |
+| `loop` | Iterates over items | Processing collections |
+
+### Modifying Workflow Behavior
+
+| Change | Files to Update |
+|--------|-----------------|
+| Add new step type | `src/server/workflows/steps/`, then update `control-steps.ts` factory |
+| Add LLM provider | `src/server/workflows/steps/llm-step.ts` - implement `LLMProvider` interface |
+| Add new tool | Create in `src/server/workflows/tools/`, register with `ToolRegistry` |
+| Change default LLM config | `src/server/workflows/steps/llm-step.ts` - `DEFAULT_LLM_CONFIG` |
+| Modify orchestrator config | `src/server/workflows/orchestrator.ts` - `DEFAULT_ORCHESTRATOR_CONFIG` |
+
+### Workflow Execution Flow
+
+1. **Trigger**: Workflow receives trigger data (validated against schema if provided)
+2. **Instance Creation**: Orchestrator creates a workflow instance with context
+3. **Step Execution**: Entry step is executed, then transitions determine next steps
+4. **Decision Points**: Decision steps use LLM to pick next step(s) dynamically
+5. **Parallel Execution**: Parallel steps run concurrently when specified
+6. **Completion**: Workflow completes when no more steps to execute
+
+### Event System
+
+Subscribe to workflow events for monitoring:
+```typescript
+import { getOrchestrator } from "@/server/workflows";
+
+const orchestrator = getOrchestrator();
+orchestrator.on((event) => {
+  switch (event.type) {
+    case "workflow:started":
+      console.log("Workflow started:", event.instance.id);
+      break;
+    case "step:completed":
+      console.log("Step completed:", event.step.stepName);
+      break;
+    case "workflow:completed":
+      console.log("Workflow completed:", event.result);
+      break;
+  }
+});
+```
