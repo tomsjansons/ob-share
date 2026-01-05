@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff } from "lucide-react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { isGeolocationSupported, requestLocationPermission, checkLocationPermission } from "@/lib/location";
 
 export function SettingsPage() {
@@ -106,7 +107,10 @@ export function SettingsPage() {
 
   if (settingsQuery.isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
+      <div className="relative flex min-h-screen items-center justify-center p-4">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
         <Card className="w-full max-w-md">
           <CardContent className="flex items-center justify-center py-8">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -117,7 +121,10 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Vault Settings</CardTitle>
@@ -191,7 +198,7 @@ export function SettingsPage() {
                 </p>
               </div>
               {locationPermission === "granted" && (
-                <div className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 px-2 py-1 rounded">
                   <MapPin className="h-3 w-3" />
                   <span>Enabled</span>
                 </div>
@@ -211,7 +218,7 @@ export function SettingsPage() {
             </div>
 
             {!geolocationSupported ? (
-              <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+              <div className="rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-200">
                 <p>Location sharing is not supported in this browser.</p>
               </div>
             ) : (
@@ -238,7 +245,7 @@ export function SettingsPage() {
                       This helps provide context for your notes.
                     </p>
                     {browserLocationState === "denied" && (
-                      <div className="rounded-md bg-amber-50 border border-amber-200 p-2 text-xs text-amber-800">
+                      <div className="rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-2 text-xs text-amber-800 dark:text-amber-200">
                         <p>
                           Location access was denied in your browser. To enable it, you&apos;ll need to
                           allow location access in your browser settings for this site.
@@ -272,7 +279,7 @@ export function SettingsPage() {
 
           {/* Status Messages */}
           {saveStatus === "saved" && (
-            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 rounded-md p-3">
+            <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 rounded-md p-3">
               <CheckCircle2 className="h-4 w-4" />
               <span>Settings saved successfully</span>
             </div>

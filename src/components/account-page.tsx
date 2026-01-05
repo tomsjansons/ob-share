@@ -15,6 +15,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface User {
   id: string;
@@ -58,7 +59,10 @@ export function AccountPage({ user }: AccountPageProps) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
@@ -75,11 +79,11 @@ export function AccountPage({ user }: AccountPageProps) {
         <CardContent className="space-y-4">
           {/* Incomplete Setup Warning */}
           {settingsQuery.data && !settingsQuery.data.isComplete && (
-            <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-200">
               <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
               <div>
                 <p className="font-medium">Incomplete Setup</p>
-                <p className="text-xs text-amber-700">
+                <p className="text-xs text-amber-700 dark:text-amber-400">
                   Configure your vault settings to enable sharing.
                 </p>
               </div>
@@ -110,7 +114,7 @@ export function AccountPage({ user }: AccountPageProps) {
               <Settings className="mr-2 h-4 w-4" />
               Vault Settings
               {settingsQuery.data && !settingsQuery.data.isComplete && (
-                <span className="ml-2 text-xs text-amber-600">(Required)</span>
+                <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">(Required)</span>
               )}
             </Button>
           </Link>

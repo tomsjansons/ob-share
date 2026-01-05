@@ -219,6 +219,37 @@ Vault paths are now configured per-user via settings:
 - Settings created automatically on user signup
 - Settings can be modified anytime from the settings page
 
+## Theming
+
+The app uses `next-themes` for dark/light mode support with Tailwind CSS.
+
+### Key Theming Files
+
+| File | Purpose |
+|------|---------|
+| `src/components/theme-provider.tsx` | ThemeProvider wrapper using next-themes |
+| `src/components/theme-toggle.tsx` | Sun/moon toggle button component |
+| `src/app/layout.tsx` | Theme provider configuration |
+| `src/app/globals.css` | CSS variables for light and dark themes |
+| `tailwind.config.ts` | Tailwind configuration with `darkMode: ["class"]` |
+
+### Adding Theme Support to New Components
+
+1. Use semantic Tailwind colors (`bg-background`, `text-foreground`, etc.) for automatic theming
+2. For hardcoded colors, add dark variants: `bg-amber-50 dark:bg-amber-950`
+3. Add theme toggle to new pages with the `<ThemeToggle />` component
+4. Common patterns:
+   - Warning boxes: `bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200`
+   - Success messages: `text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950`
+
+### Theme Configuration
+
+The theme provider is configured in `layout.tsx` with:
+- `attribute="class"` - Adds `dark` class to HTML element
+- `defaultTheme="system"` - Respects OS preference by default
+- `enableSystem` - Enables system preference detection
+- `disableTransitionOnChange` - Prevents flash on theme change
+
 ## Logging
 
 The application uses Pino for structured logging across all backend operations.
