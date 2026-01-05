@@ -1,0 +1,1 @@
+ALTER TABLE `user_settings` ADD `location_permission` text DEFAULT 'not_asked' NOT NULL;

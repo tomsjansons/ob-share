@@ -58,6 +58,14 @@ export const allowList = sqliteTable("allow_list", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+/**
+ * Location permission status enum values:
+ * - not_asked: User hasn't been asked for location permission yet
+ * - granted: User has granted location permission
+ * - denied: User has denied location permission
+ */
+export type LocationPermissionStatus = "not_asked" | "granted" | "denied";
+
 // User settings table for vault configuration
 export const userSettings = sqliteTable("user_settings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -67,6 +75,10 @@ export const userSettings = sqliteTable("user_settings", {
     .references(() => user.id),
   vaultName: text("vault_name"),
   incomingFolder: text("incoming_folder"),
+  locationPermission: text("location_permission")
+    .$type<LocationPermissionStatus>()
+    .notNull()
+    .default("not_asked"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
