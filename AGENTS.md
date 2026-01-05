@@ -578,7 +578,9 @@ The app includes an agentic workflow system for building multi-step, LLM-driven 
 | `src/server/workflows/steps/control-steps.ts` | Parallel, transform, condition, loop steps |
 | `src/server/workflows/tools/file-tools.ts` | File system tools |
 | `src/server/workflows/tools/http-tools.ts` | HTTP request tools |
+| `src/server/workflows/tools/ai-extraction-tools.ts` | AI content extraction tools |
 | `src/server/workflows/examples/` | Example workflow implementations |
+| `src/server/workflows/examples/new-note-extract-workflow.ts` | Note content extraction workflow |
 
 ### Workflow Concepts
 
@@ -705,3 +707,81 @@ orchestrator.on((event) => {
   }
 });
 ```
+
+## File Checker Module
+
+The File Checker is a periodic task system that scans the incoming folder for new notes and triggers content extraction workflows.
+
+### Key File Checker Files
+
+| File | Purpose |
+|------|---------|
+| `src/server/file-checker/file-checker.ts` | Core file checker implementation |
+| `src/server/file-checker/index.ts` | Module exports |
+
+### How It Works
+
+1. **Periodic Scanning**: Runs every N seconds (configurable, default: 10)
+2. **Status Detection**: Looks for `.md` files with `status: new` in frontmatter
+3. **Content Type Detection**: Determines if content is audio, video, image, URL, or text
+4. **Workflow Trigger**: Creates a workflow job for the `new-note-extract` workflow
+5. **Status Update**: Updates file status from `new` → `extracting` → `extracted`
+
+### File Checker Configuration
+
+The check interval is stored in `user_settings.fileCheckInterval` (in seconds).
+
+```typescript
+// Get the global file checker instance
+import { getGlobalFileChecker } from "@/server/file-checker";
+
+const checker = getGlobalFileChecker({ intervalMs: 10000 });
+checker.start();
+
+// Update interval
+checker.updateInterval(30000); // 30 seconds
+
+// Get status
+const status = checker.getStatus();
+
+// Stop
+checker.stop();
+```
+
+### AI Extraction Tools
+
+| Tool | Purpose |
+|------|---------|
+| `extract-audio` | Extract speakers, transcription, intentions from audio files |
+| `extract-video` | Extract audio + visual info from video files |
+| `extract-image` | Extract visual info, text, diagrams from images |
+| `extract-url` | Fetch and extract content from URLs |
+
+### Required API Keys
+
+| API Key | Used For |
+|---------|----------|
+| `ANTHROPIC_API_KEY` | Image analysis, content analysis, URL processing |
+| `OPENAI_API_KEY` | Audio transcription (Whisper API) |
+
+### Modifying File Checker Behavior
+
+| Change | Files to Update |
+|--------|-----------------|
+| Change default interval | `src/server/file-checker/file-checker.ts` - `DEFAULT_CHECK_INTERVAL_MS` |
+| Add content type detection | `src/server/file-checker/file-checker.ts` - `detectContentType()` |
+| Modify extraction workflow | `src/server/workflows/examples/new-note-extract-workflow.ts` |
+| Add new extraction tool | `src/server/workflows/tools/ai-extraction-tools.ts` |
+| Change AI models | `src/server/workflows/tools/ai-extraction-tools.ts` |
+
+### Note Status Flow
+
+```
+new → extracting → extracted
+                 ↘ extraction_failed (on error)
+```
+
+The workflow updates the note file with:
+- Extracted content at the top under `## Extracted [Type] Content`
+- Original content preserved under `## Original Content`
+- Updated frontmatter with `status`, `extractedAt`, `contentType`

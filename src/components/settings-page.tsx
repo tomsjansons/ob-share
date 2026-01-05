@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff } from "lucide-react";
+import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff, Clock } from "lucide-react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -33,7 +33,9 @@ interface SettingsPageProps {
 export function SettingsPage({ user }: SettingsPageProps) {
   const [vaultName, setVaultName] = useState("");
   const [incomingFolder, setIncomingFolder] = useState("");
+  const [fileCheckInterval, setFileCheckInterval] = useState(10);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [intervalSaveStatus, setIntervalSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [locationRequesting, setLocationRequesting] = useState(false);
   const [audioRequesting, setAudioRequesting] = useState(false);
@@ -66,10 +68,23 @@ export function SettingsPage({ user }: SettingsPageProps) {
     },
   });
 
+  const updateFileCheckIntervalMutation = trpc.settings.updateFileCheckInterval.useMutation({
+    onSuccess: () => {
+      setIntervalSaveStatus("saved");
+      settingsQuery.refetch();
+      setTimeout(() => setIntervalSaveStatus("idle"), 3000);
+    },
+    onError: (err) => {
+      setIntervalSaveStatus("error");
+      setError(err.message);
+    },
+  });
+
   useEffect(() => {
     if (settingsQuery.data) {
       setVaultName(settingsQuery.data.vaultName || "");
       setIncomingFolder(settingsQuery.data.incomingFolder || "");
+      setFileCheckInterval(settingsQuery.data.fileCheckInterval ?? 10);
     }
   }, [settingsQuery.data]);
 
@@ -130,6 +145,24 @@ export function SettingsPage({ user }: SettingsPageProps) {
       audioPermission: "denied",
     });
   };
+
+  const handleSaveFileCheckInterval = () => {
+    if (fileCheckInterval < 5 || fileCheckInterval > 3600) {
+      setError("File check interval must be between 5 and 3600 seconds");
+      setIntervalSaveStatus("error");
+      return;
+    }
+
+    setIntervalSaveStatus("saving");
+    setError(null);
+    updateFileCheckIntervalMutation.mutate({
+      fileCheckInterval,
+    });
+  };
+
+  const hasIntervalChanges =
+    settingsQuery.data &&
+    fileCheckInterval !== (settingsQuery.data.fileCheckInterval ?? 10);
 
   const handleSave = () => {
     if (!vaultName.trim() || !incomingFolder.trim()) {
@@ -467,6 +500,57 @@ export function SettingsPage({ user }: SettingsPageProps) {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* File Check Interval Section */}
+            <div className="space-y-3 pt-4 border-t">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base">File Check Interval</Label>
+                  <p className="text-xs text-muted-foreground">
+                    How often to check for new files in the incoming folder (seconds)
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                  <Clock className="h-3 w-3" />
+                  <span>{settingsQuery.data?.fileCheckInterval ?? 10}s</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    min={5}
+                    max={3600}
+                    value={fileCheckInterval}
+                    onChange={(e) => setFileCheckInterval(parseInt(e.target.value) || 10)}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={handleSaveFileCheckInterval}
+                    disabled={intervalSaveStatus === "saving" || !hasIntervalChanges}
+                    size="sm"
+                  >
+                    {intervalSaveStatus === "saving" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The system will check the incoming folder every {fileCheckInterval} seconds for new notes to process.
+                  Minimum: 5 seconds, Maximum: 3600 seconds (1 hour).
+                </p>
+
+                {intervalSaveStatus === "saved" && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 rounded-md p-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Interval saved</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Back Link */}

@@ -31,6 +31,7 @@ export const settingsRouter = router({
         incomingFolder: null,
         locationPermission: "not_asked",
         audioPermission: "not_asked",
+        fileCheckInterval: 10,
         createdAt: now,
         updatedAt: now,
       });
@@ -40,11 +41,12 @@ export const settingsRouter = router({
         incomingFolder: null,
         locationPermission: "not_asked" as LocationPermissionStatus,
         audioPermission: "not_asked" as AudioPermissionStatus,
+        fileCheckInterval: 10,
         isComplete: false,
       };
     }
 
-    const { vaultName, incomingFolder, locationPermission, audioPermission } = settings[0];
+    const { vaultName, incomingFolder, locationPermission, audioPermission, fileCheckInterval } = settings[0];
     const isComplete = Boolean(vaultName && incomingFolder);
 
     logger.debug({
@@ -52,6 +54,7 @@ export const settingsRouter = router({
       isComplete,
       locationPermission,
       audioPermission,
+      fileCheckInterval,
     });
 
     return {
@@ -59,6 +62,7 @@ export const settingsRouter = router({
       incomingFolder,
       locationPermission,
       audioPermission,
+      fileCheckInterval,
       isComplete,
     };
   }),
@@ -241,6 +245,65 @@ export const settingsRouter = router({
       return {
         success: true,
         audioPermission: input.audioPermission,
+      };
+    }),
+
+  updateFileCheckInterval: protectedProcedure
+    .input(
+      z.object({
+        fileCheckInterval: z.number().min(5).max(3600),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { logger } = ctx;
+
+      logger.info({
+        event: "settings.updateFileCheckInterval.start",
+        fileCheckInterval: input.fileCheckInterval,
+      });
+
+      const existingSettings = await db
+        .select()
+        .from(userSettings)
+        .where(eq(userSettings.userId, ctx.session.user.id))
+        .limit(1);
+
+      const now = new Date();
+
+      if (existingSettings.length === 0) {
+        await db.insert(userSettings).values({
+          userId: ctx.session.user.id,
+          vaultName: null,
+          incomingFolder: null,
+          locationPermission: "not_asked",
+          audioPermission: "not_asked",
+          fileCheckInterval: input.fileCheckInterval,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        logger.info({
+          event: "settings.updateFileCheckInterval.created",
+          fileCheckInterval: input.fileCheckInterval,
+        });
+      } else {
+        await db
+          .update(userSettings)
+          .set({
+            fileCheckInterval: input.fileCheckInterval,
+            updatedAt: now,
+          })
+          .where(eq(userSettings.userId, ctx.session.user.id));
+
+        logger.info({
+          event: "settings.updateFileCheckInterval.updated",
+          fileCheckInterval: input.fileCheckInterval,
+        });
+      }
+
+      return {
+        success: true,
+        fileCheckInterval: input.fileCheckInterval,
       };
     }),
 });

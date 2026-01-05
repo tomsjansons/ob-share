@@ -91,6 +91,8 @@ export const userSettings = sqliteTable("user_settings", {
     .$type<AudioPermissionStatus>()
     .notNull()
     .default("not_asked"),
+  // File check interval in seconds (default: 10 seconds)
+  fileCheckInterval: integer("file_check_interval").notNull().default(10),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });

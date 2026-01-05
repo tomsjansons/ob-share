@@ -185,6 +185,9 @@ export {
 import { JobRegistry } from "@/server/jobs";
 import { workflowExecutionJob } from "./workflow-job";
 import { registerBuiltInTools } from "./steps";
+import { WorkflowRegistry } from "./registry";
+import { newNoteExtractWorkflow } from "./examples/new-note-extract-workflow";
+import { registerAllTools } from "./tools";
 
 /**
  * Initialize the workflow system
@@ -192,6 +195,7 @@ import { registerBuiltInTools } from "./steps";
  * Call this during application startup to:
  * - Register the workflow execution job
  * - Register built-in tools
+ * - Register workflows
  */
 export function initializeWorkflowSystem(): void {
   // Register workflow job with job queue
@@ -199,4 +203,10 @@ export function initializeWorkflowSystem(): void {
 
   // Register built-in tools
   registerBuiltInTools();
+
+  // Register all tools including AI extraction tools
+  registerAllTools();
+
+  // Register workflows
+  WorkflowRegistry.register(newNoteExtractWorkflow);
 }
