@@ -93,6 +93,11 @@ export const userSettings = sqliteTable("user_settings", {
     .default("not_asked"),
   // File check interval in seconds (default: 10 seconds)
   fileCheckInterval: integer("file_check_interval").notNull().default(10),
+  // OpenAI API configuration
+  openaiApiKey: text("openai_api_key"),
+  openaiModel: text("openai_model").notNull().default("gpt-4o-audio-preview"),
+  // Maximum retry attempts for extraction (default: 5)
+  maxRetries: integer("max_retries").notNull().default(5),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });

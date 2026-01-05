@@ -11,6 +11,7 @@ import { z } from "zod";
 import { defineTool } from "../steps/tool-step";
 import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
+import { OpenAIClient, isValidApiKey } from "@/server/openai";
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -232,67 +233,55 @@ export const extractAudioTool = defineTool({
       description: "Path to the audio file",
       required: true,
     },
+    {
+      name: "openaiApiKey",
+      type: "string",
+      description: "OpenAI API key for transcription",
+      required: false,
+    },
+    {
+      name: "openaiModel",
+      type: "string",
+      description: "OpenAI model to use (default: whisper-1)",
+      required: false,
+    },
   ],
   inputSchema: z.object({
     filePath: z.string(),
+    openaiApiKey: z.string().optional(),
+    openaiModel: z.string().optional(),
   }),
   outputSchema: AudioExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<AudioExtractionResult>> => {
     try {
       context.logger.info("Extracting audio content", { filePath: input.filePath });
 
-      // For audio, we'll use OpenAI Whisper for transcription if available
-      // Otherwise, provide a structured placeholder with instructions
-      const apiKey = process.env.OPENAI_API_KEY;
+      // Get API key from input or environment
+      const apiKey = input.openaiApiKey ?? process.env.OPENAI_API_KEY;
+      const model = input.openaiModel ?? "whisper-1";
 
-      if (!apiKey) {
-        // Return a placeholder result with manual transcription instructions
+      if (!isValidApiKey(apiKey)) {
         logger.warn({
           event: "audio_extraction.no_api_key",
           filePath: input.filePath,
         });
 
         return {
-          success: true,
-          output: {
-            speakers: [],
-            transcription: [{
-              text: "[Audio file requires manual transcription or OpenAI API key configuration]",
-            }],
-            summary: "Audio file detected. Configure OPENAI_API_KEY for automatic transcription.",
-            intentions: [],
-            backgroundNoises: [],
-            language: "unknown",
-          },
+          success: false,
+          error: "OpenAI API key not configured. Please add your API key in Settings.",
         };
       }
 
-      // Read audio file
-      const { data: base64Data, mimeType } = await readFileAsBase64(input.filePath);
+      // Create OpenAI client
+      const openai = new OpenAIClient({ apiKey, model });
 
-      // Use OpenAI Whisper for transcription
-      const formData = new FormData();
-      const audioBuffer = Buffer.from(base64Data, "base64");
-      const blob = new Blob([audioBuffer], { type: mimeType });
-      formData.append("file", blob, path.basename(input.filePath));
-      formData.append("model", "whisper-1");
-      formData.append("response_format", "verbose_json");
-
-      const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: formData,
+      // Transcribe the audio file
+      const transcriptionResult = await openai.transcribe(input.filePath, {
+        model,
+        responseFormat: "verbose_json",
       });
 
-      if (!whisperResponse.ok) {
-        const errorBody = await whisperResponse.text();
-        throw new Error(`Whisper API error: ${whisperResponse.status} - ${errorBody}`);
-      }
-
-      const whisperData = await whisperResponse.json();
-      const transcriptionText = whisperData.text || "";
+      const transcriptionText = transcriptionResult.text;
 
       // Now use Claude to analyze the transcription for speakers, intentions, etc.
       const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -341,7 +330,6 @@ Respond in JSON format matching this schema:
           const data = await response.json();
           const content = data.content?.[0]?.text || "{}";
           try {
-            // Extract JSON from response
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               analysisResult = JSON.parse(jsonMatch[0]);
@@ -355,7 +343,7 @@ Respond in JSON format matching this schema:
               summary: transcriptionText.slice(0, 200) + "...",
               intentions: [],
               backgroundNoises: [],
-              language: whisperData.language || "unknown",
+              language: transcriptionResult.language || "unknown",
             };
           }
         } else {
@@ -365,7 +353,7 @@ Respond in JSON format matching this schema:
             summary: transcriptionText.slice(0, 200) + "...",
             intentions: [],
             backgroundNoises: [],
-            language: whisperData.language || "unknown",
+            language: transcriptionResult.language || "unknown",
           };
         }
       } else {
@@ -375,7 +363,7 @@ Respond in JSON format matching this schema:
           summary: transcriptionText.slice(0, 200) + "...",
           intentions: [],
           backgroundNoises: [],
-          language: whisperData.language || "unknown",
+          language: transcriptionResult.language || "unknown",
         };
       }
 

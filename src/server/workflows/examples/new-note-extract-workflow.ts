@@ -23,7 +23,7 @@ import {
   WorkflowPriority,
 } from "../index";
 import type { WorkflowContext } from "../types";
-import { updateFileStatus, getAttachmentPath } from "@/server/file-checker";
+import { updateFileStatus, updateFileWithError, getAttachmentPath } from "@/server/file-checker";
 import { logger as baseLogger } from "@/lib/logger";
 import type {
   AudioExtractionResult,
@@ -45,6 +45,11 @@ export const NewNoteExtractTriggerSchema = z.object({
   filePath: z.string().describe("Path to the markdown file to process"),
   contentType: z.enum(["audio", "video", "image", "url", "text"]).describe("Type of content in the note"),
   userId: z.string().describe("ID of the user who owns this note"),
+  openaiApiKey: z.string().optional().describe("OpenAI API key for transcription"),
+  openaiModel: z.string().optional().describe("OpenAI model for transcription"),
+  maxRetries: z.number().optional().describe("Maximum retry attempts"),
+  isRetry: z.boolean().optional().describe("Whether this is a retry attempt"),
+  retryNum: z.number().optional().describe("Current retry attempt number"),
 });
 
 export type NewNoteExtractTrigger = z.infer<typeof NewNoteExtractTriggerSchema>;
@@ -502,6 +507,8 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
 
         return {
           filePath: getAttachmentPath(trigger.filePath, audioAttachment),
+          openaiApiKey: trigger.openaiApiKey,
+          openaiModel: trigger.openaiModel,
         };
       },
       condition: {
@@ -709,20 +716,43 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
       result,
     });
   })
-  .onFailed(async (instance, error) => {
+  .onFailed(async (instance, error: unknown) => {
+    const trigger = instance.trigger as NewNoteExtractTrigger;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const maxRetries = trigger.maxRetries ?? 5;
+
     logger.error({
       event: "workflow.failed",
       instanceId: instance.id,
-      error,
+      filePath: trigger.filePath,
+      error: errorMessage,
+      maxRetries,
     });
 
-    // Try to update status to "extraction_failed"
+    // Update file with error details and schedule retry if applicable
     try {
-      const trigger = instance.trigger as NewNoteExtractTrigger;
-      await updateFileStatus(trigger.filePath, "extraction_failed");
+      const result = await updateFileWithError(trigger.filePath, errorMessage, maxRetries);
+
+      if (result.shouldRetry) {
+        logger.info({
+          event: "workflow.retry_scheduled",
+          instanceId: instance.id,
+          filePath: trigger.filePath,
+          retryNum: result.retryNum,
+          nextRetryAt: result.nextRetryAt?.toISOString(),
+        });
+      } else {
+        logger.warn({
+          event: "workflow.max_retries_exceeded",
+          instanceId: instance.id,
+          filePath: trigger.filePath,
+          totalAttempts: result.retryNum,
+        });
+      }
     } catch (updateErr) {
       logger.error({
-        event: "workflow.status_update_failed",
+        event: "workflow.error_update_failed",
+        instanceId: instance.id,
         error: updateErr instanceof Error ? updateErr.message : String(updateErr),
       });
     }

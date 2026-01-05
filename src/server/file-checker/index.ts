@@ -10,5 +10,6 @@ export {
   getGlobalFileChecker,
   resetGlobalFileChecker,
   updateFileStatus,
+  updateFileWithError,
   getAttachmentPath,
 } from "./file-checker";

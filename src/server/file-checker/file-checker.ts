@@ -96,6 +96,26 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, unknow
 }
 
 /**
+ * Rebuild frontmatter to string
+ */
+function buildFrontmatter(frontmatter: Record<string, unknown>): string {
+  const lines = ["---"];
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (Array.isArray(value)) {
+      lines.push(`${key}: [${value.map((v) => `"${v}"`).join(", ")}]`);
+    } else if (typeof value === "string") {
+      lines.push(`${key}: "${value}"`);
+    } else if (value === null || value === undefined) {
+      lines.push(`${key}: null`);
+    } else {
+      lines.push(`${key}: ${String(value)}`);
+    }
+  }
+  lines.push("---");
+  return lines.join("\n");
+}
+
+/**
  * Update frontmatter status in a markdown file
  */
 export async function updateFileStatus(filePath: string, newStatus: string): Promise<void> {
@@ -105,21 +125,7 @@ export async function updateFileStatus(filePath: string, newStatus: string): Pro
 
     frontmatter.status = newStatus;
 
-    // Rebuild frontmatter
-    const frontmatterLines = ["---"];
-    for (const [key, value] of Object.entries(frontmatter)) {
-      if (Array.isArray(value)) {
-        frontmatterLines.push(`${key}: [${value.map((v) => `"${v}"`).join(", ")}]`);
-      } else if (typeof value === "string") {
-        frontmatterLines.push(`${key}: "${value}"`);
-      } else {
-        frontmatterLines.push(`${key}: ${value}`);
-      }
-    }
-    frontmatterLines.push("---");
-    frontmatterLines.push("");
-
-    const newContent = frontmatterLines.join("\n") + body;
+    const newContent = buildFrontmatter(frontmatter) + "\n\n" + body;
     await fs.writeFile(filePath, newContent, "utf-8");
 
     logger.debug({
@@ -136,6 +142,119 @@ export async function updateFileStatus(filePath: string, newStatus: string): Pro
     });
     throw err;
   }
+}
+
+/**
+ * Calculate exponential backoff delay in milliseconds
+ */
+function calculateBackoffMs(retryNum: number, baseDelayMs: number = 30000): number {
+  // Exponential backoff: base * 2^retryNum with jitter
+  // Example: 30s, 60s, 120s, 240s, 480s...
+  const exponentialDelay = baseDelayMs * Math.pow(2, retryNum);
+  const jitter = Math.random() * 0.1 * exponentialDelay; // 10% jitter
+  return Math.min(exponentialDelay + jitter, 3600000); // Cap at 1 hour
+}
+
+/**
+ * Update file with error details and schedule retry
+ */
+export async function updateFileWithError(
+  filePath: string,
+  error: string,
+  maxRetries: number
+): Promise<{ shouldRetry: boolean; retryNum: number; nextRetryAt: Date | null }> {
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    const { frontmatter, body } = parseFrontmatter(content);
+
+    // Get current retry count
+    const currentRetryNum = typeof frontmatter["retry-num"] === "number" ? frontmatter["retry-num"] : 0;
+    const newRetryNum = currentRetryNum + 1;
+
+    // Check if we should retry
+    const shouldRetry = newRetryNum <= maxRetries;
+
+    // Update frontmatter
+    frontmatter["retry-num"] = newRetryNum;
+    frontmatter["last-error"] = error;
+    frontmatter["last-error-at"] = new Date().toISOString();
+
+    if (shouldRetry) {
+      // Calculate next retry time with exponential backoff
+      const backoffMs = calculateBackoffMs(newRetryNum);
+      const nextRetryAt = new Date(Date.now() + backoffMs);
+      frontmatter.status = "retry";
+      frontmatter["next-retry-at"] = nextRetryAt.toISOString();
+
+      logger.info({
+        event: "file-checker.retry_scheduled",
+        filePath,
+        retryNum: newRetryNum,
+        maxRetries,
+        nextRetryAt: nextRetryAt.toISOString(),
+        backoffMs,
+      });
+    } else {
+      // Max retries exceeded
+      frontmatter.status = "extraction_failed";
+      frontmatter["next-retry-at"] = null;
+
+      logger.warn({
+        event: "file-checker.max_retries_exceeded",
+        filePath,
+        retryNum: newRetryNum,
+        maxRetries,
+      });
+    }
+
+    // Add error details section to body if not already present
+    let newBody = body;
+    const errorSection = `\n\n---\n\n## Extraction Error (Attempt ${newRetryNum}/${maxRetries})\n\n**Error:** ${error}\n\n**Time:** ${new Date().toISOString()}\n\n`;
+
+    // Check if body already has an error section
+    if (!body.includes("## Extraction Error")) {
+      newBody = body + errorSection;
+    } else {
+      // Append to existing error section
+      newBody = body.replace(
+        /(## Extraction Error[\s\S]*?)(\n\n---|\n\n## (?!Extraction Error)|$)/,
+        `$1${errorSection.trim()}\n\n$2`
+      );
+    }
+
+    const newContent = buildFrontmatter(frontmatter) + "\n\n" + newBody;
+    await fs.writeFile(filePath, newContent, "utf-8");
+
+    return {
+      shouldRetry,
+      retryNum: newRetryNum,
+      nextRetryAt: shouldRetry ? new Date(Date.now() + calculateBackoffMs(newRetryNum)) : null,
+    };
+  } catch (err) {
+    logger.error({
+      event: "file-checker.error_update_failed",
+      filePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+/**
+ * Check if a file is ready for retry based on next-retry-at timestamp
+ */
+function isReadyForRetry(frontmatter: Record<string, unknown>): boolean {
+  if (frontmatter.status !== "retry") {
+    return false;
+  }
+
+  const nextRetryAt = frontmatter["next-retry-at"];
+  if (!nextRetryAt || typeof nextRetryAt !== "string") {
+    return true; // If no timestamp, retry immediately
+  }
+
+  const retryTime = new Date(nextRetryAt);
+  return Date.now() >= retryTime.getTime();
 }
 
 /**
@@ -402,7 +521,12 @@ export class FileChecker {
         continue;
       }
 
-      const result = await this.checkIncomingFolder(incomingPath, settings.userId);
+      const result = await this.checkIncomingFolder(incomingPath, {
+        userId: settings.userId,
+        openaiApiKey: settings.openaiApiKey ?? undefined,
+        openaiModel: settings.openaiModel,
+        maxRetries: settings.maxRetries,
+      });
       totalFilesFound += result.filesFound;
       totalFilesProcessed += result.filesProcessed;
     }
@@ -415,7 +539,12 @@ export class FileChecker {
    */
   private async checkIncomingFolder(
     incomingPath: string,
-    userId: string
+    userConfig: {
+      userId: string;
+      openaiApiKey?: string;
+      openaiModel: string;
+      maxRetries: number;
+    }
   ): Promise<{ filesFound: number; filesProcessed: number }> {
     let filesFound = 0;
     let filesProcessed = 0;
@@ -434,8 +563,11 @@ export class FileChecker {
           const content = await fs.readFile(filePath, "utf-8");
           const { frontmatter } = parseFrontmatter(content);
 
-          // Check if status is "new"
-          if (frontmatter.status !== "new") {
+          // Check if status is "new" or ready for retry
+          const isNew = frontmatter.status === "new";
+          const isRetryReady = isReadyForRetry(frontmatter);
+
+          if (!isNew && !isRetryReady) {
             continue;
           }
 
@@ -443,26 +575,34 @@ export class FileChecker {
 
           // Detect content type
           const contentType = detectContentType(content, frontmatter);
+          const isRetry = frontmatter.status === "retry";
+          const retryNum = typeof frontmatter["retry-num"] === "number" ? frontmatter["retry-num"] : 0;
 
           logger.info({
-            event: "file-checker.new_file_found",
+            event: isRetry ? "file-checker.retry_file_found" : "file-checker.new_file_found",
             filePath,
             contentType,
-            userId,
+            userId: userConfig.userId,
+            retryNum: isRetry ? retryNum : undefined,
           });
 
           // Update status to "extracting"
           await updateFileStatus(filePath, "extracting");
 
-          // Create workflow job for extraction
+          // Create workflow job for extraction with user config
           await createWorkflowJob({
             workflowId: "new-note-extract",
             trigger: {
               filePath,
               contentType,
-              userId,
+              userId: userConfig.userId,
+              openaiApiKey: userConfig.openaiApiKey,
+              openaiModel: userConfig.openaiModel,
+              maxRetries: userConfig.maxRetries,
+              isRetry,
+              retryNum,
             },
-            userId,
+            userId: userConfig.userId,
           });
 
           filesProcessed++;
@@ -471,6 +611,7 @@ export class FileChecker {
             event: "file-checker.workflow_triggered",
             filePath,
             contentType,
+            isRetry,
           });
         } catch (err) {
           logger.error({
