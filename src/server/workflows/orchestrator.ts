@@ -451,11 +451,7 @@ export class WorkflowOrchestrator {
         // Call step complete hook
         if (workflow.onStepComplete) {
           try {
-            await workflow.onStepComplete(instance, {
-              id: stepId,
-              name: stepConfig.name,
-              output: result.output,
-            } as StepExecutionRecord);
+            await workflow.onStepComplete(instance, stepRecord);
           } catch (err) {
             logger.error(
               { event: "workflow.onStepComplete.error", instanceId: instance.id, err },
