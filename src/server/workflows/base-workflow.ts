@@ -15,6 +15,7 @@ import type {
   WorkflowInstance,
   WorkflowContext,
   StepCondition,
+  StepExecutionRecord,
 } from "./types";
 import { WorkflowPriority as Priority } from "./types";
 import { logger as baseLogger } from "@/lib/logger";
@@ -237,7 +238,7 @@ export abstract class BaseWorkflow<TTrigger = unknown, TResult = unknown>
    */
   async onStepComplete?(
     instance: WorkflowInstance,
-    step: { id: string; name: string; output: unknown }
+    step: StepExecutionRecord
   ): Promise<void>;
 
   /**
@@ -284,7 +285,7 @@ export class WorkflowBuilder<TTrigger = unknown, TResult = unknown> {
   private _onStart?: (instance: WorkflowInstance) => Promise<void>;
   private _onComplete?: (instance: WorkflowInstance, result: TResult) => Promise<void>;
   private _onFailed?: (instance: WorkflowInstance, error: string) => Promise<void>;
-  private _onStepComplete?: (instance: WorkflowInstance, step: { id: string; name: string; output: unknown }) => Promise<void>;
+  private _onStepComplete?: (instance: WorkflowInstance, step: StepExecutionRecord) => Promise<void>;
 
   constructor(id: string, name: string) {
     this._id = id;
@@ -415,7 +416,7 @@ export class WorkflowBuilder<TTrigger = unknown, TResult = unknown> {
   onStepComplete(
     handler: (
       instance: WorkflowInstance,
-      step: { id: string; name: string; output: unknown }
+      step: StepExecutionRecord
     ) => Promise<void>
   ): this {
     this._onStepComplete = handler;
