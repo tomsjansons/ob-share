@@ -12,6 +12,7 @@ import { signIn } from "@/lib/auth-client";
 import { Github } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function LandingPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -32,7 +33,10 @@ export function LandingPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold">ob-share</CardTitle>

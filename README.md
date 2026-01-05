@@ -27,6 +27,7 @@ This project provides a cloud-based, containerized Obsidian installation that:
 | Authentication | Better Auth | GitHub OAuth |
 | Database | SQLite + Drizzle ORM | User data and sessions |
 | UI | shadcn/ui + Tailwind CSS | Component library |
+| Theming | next-themes | Dark/light mode support |
 | Process Manager | supervisord | Service orchestration |
 | Logging | Pino | Structured logging (logfmt in prod, pretty in dev) |
 | Application | Obsidian v1.7.7 | Note-taking app |
@@ -91,6 +92,18 @@ ob-share/
     └── workflows/
         └── fly-deploy.yml  # CI/CD workflow
 ```
+
+## Theme Support
+
+The application supports dark and light themes:
+
+| Feature | Description |
+|---------|-------------|
+| System preference | Automatically matches your OS theme preference |
+| Manual toggle | Click the sun/moon icon in the top-right corner |
+| Persistent | Theme choice is saved in local storage |
+
+The theme toggle is available on all pages (landing, account, settings, and share pages).
 
 ## Quick Start
 

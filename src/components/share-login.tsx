@@ -13,6 +13,7 @@ import { Github, Share2, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { SharedFile } from "@/lib/share-store";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface ShareLoginProps {
   sharedData: {
@@ -59,7 +60,10 @@ export function ShareLogin({ sharedData }: ShareLoginProps) {
   const error = searchParams.get("error");
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mb-2 flex justify-center">
@@ -110,8 +114,8 @@ export function ShareLogin({ sharedData }: ShareLoginProps) {
           )}
 
           {hasFiles && (
-            <div className="rounded-md bg-amber-500/10 p-3 text-sm flex gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+            <div className="rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-3 text-sm flex gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400 flex-shrink-0 mt-0.5" />
               <p className="text-amber-700 dark:text-amber-400">
                 Files cannot be preserved during login. Text content will be saved, but please re-share files after signing in.
               </p>
