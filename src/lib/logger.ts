@@ -19,6 +19,11 @@ export function getElapsedMs(): number {
  */
 export const logger = pino({
   level: process.env.LOG_LEVEL || (isDev ? "debug" : "info"),
+  formatters: {
+    level: (label) => {
+      return { level: label.toUpperCase() };
+    },
+  },
   transport: isDev
     ? {
         target: "pino-pretty",
@@ -33,7 +38,6 @@ export const logger = pino({
         options: {
           flattenNestedObjects: true,
           convertToSnakeCase: true,
-          includeLevelLabel: true,
           formatTime: true,
         },
       },
