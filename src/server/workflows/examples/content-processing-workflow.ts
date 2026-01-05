@@ -138,7 +138,7 @@ ${(ctx.trigger as ContentTrigger).contentType ? `Content Type: ${(ctx.trigger as
     defineTransformStep({
       id: "store-classification",
       name: "Store Classification",
-      transform: (ctx: WorkflowContext) => {
+      transform: (ctx) => {
         const classification = (ctx.stepOutputs["classify"] as { content: z.infer<typeof ClassificationSchema> })?.content;
         return classification;
       },
@@ -151,7 +151,7 @@ ${(ctx.trigger as ContentTrigger).contentType ? `Content Type: ${(ctx.trigger as
     defineDecisionStep({
       id: "decide-action",
       name: "Decide Processing Action",
-      prompt: (ctx: WorkflowContext) => {
+      prompt: (ctx) => {
         const classification = ctx.variables.classification as z.infer<typeof ClassificationSchema>;
         return `Based on the content classification, decide what processing actions to take.
 
