@@ -5,7 +5,8 @@
  */
 
 import { z } from "zod";
-import { defineTool, type ToolResult } from "../steps/tool-step";
+import { defineTool } from "../steps/tool-step";
+import type { ToolResult } from "../types";
 
 /**
  * HTTP request tool
@@ -79,13 +80,14 @@ export const httpRequestTool = defineTool({
       // Combine abort signals
       context.signal.addEventListener("abort", () => controller.abort());
 
+      const method = input.method ?? "GET";
       const fetchOptions: RequestInit = {
-        method: input.method,
+        method,
         headers: input.headers,
         signal: controller.signal,
       };
 
-      if (input.body && ["POST", "PUT", "PATCH"].includes(input.method)) {
+      if (input.body && ["POST", "PUT", "PATCH"].includes(method)) {
         fetchOptions.body = JSON.stringify(input.body);
         fetchOptions.headers = {
           "Content-Type": "application/json",

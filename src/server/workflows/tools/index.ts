@@ -22,6 +22,7 @@ export {
 } from "./http-tools";
 
 import { ToolRegistry } from "../steps/tool-step";
+import type { ToolDefinition } from "../types";
 import { fileTools } from "./file-tools";
 import { httpTools } from "./http-tools";
 
@@ -31,11 +32,11 @@ import { httpTools } from "./http-tools";
 export function registerAllTools(): void {
   // File tools
   for (const tool of fileTools) {
-    ToolRegistry.register(tool);
+    ToolRegistry.register(tool as ToolDefinition);
   }
 
   // HTTP tools
   for (const tool of httpTools) {
-    ToolRegistry.register(tool);
+    ToolRegistry.register(tool as ToolDefinition);
   }
 }

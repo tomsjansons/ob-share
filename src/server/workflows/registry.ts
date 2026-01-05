@@ -31,10 +31,10 @@ class WorkflowRegistryImpl {
       );
     }
 
-    this.workflows.set(workflow.id, workflow);
+    this.workflows.set(workflow.id, workflow as WorkflowDefinition);
 
     // Also register with orchestrator
-    getOrchestrator().registerWorkflow(workflow);
+    getOrchestrator().registerWorkflow(workflow as WorkflowDefinition);
 
     logger.info(
       {
