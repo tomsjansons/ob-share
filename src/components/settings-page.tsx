@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff } from "lucide-react";
+import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff, Clock, Key, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -33,7 +33,13 @@ interface SettingsPageProps {
 export function SettingsPage({ user }: SettingsPageProps) {
   const [vaultName, setVaultName] = useState("");
   const [incomingFolder, setIncomingFolder] = useState("");
+  const [fileCheckInterval, setFileCheckInterval] = useState(10);
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [openaiModel, setOpenaiModel] = useState("gpt-4o-audio-preview");
+  const [maxRetries, setMaxRetries] = useState(5);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [intervalSaveStatus, setIntervalSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [openaiSaveStatus, setOpenaiSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [locationRequesting, setLocationRequesting] = useState(false);
   const [audioRequesting, setAudioRequesting] = useState(false);
@@ -66,10 +72,38 @@ export function SettingsPage({ user }: SettingsPageProps) {
     },
   });
 
+  const updateFileCheckIntervalMutation = trpc.settings.updateFileCheckInterval.useMutation({
+    onSuccess: () => {
+      setIntervalSaveStatus("saved");
+      settingsQuery.refetch();
+      setTimeout(() => setIntervalSaveStatus("idle"), 3000);
+    },
+    onError: (err) => {
+      setIntervalSaveStatus("error");
+      setError(err.message);
+    },
+  });
+
+  const updateOpenaiSettingsMutation = trpc.settings.updateOpenaiSettings.useMutation({
+    onSuccess: () => {
+      setOpenaiSaveStatus("saved");
+      settingsQuery.refetch();
+      setTimeout(() => setOpenaiSaveStatus("idle"), 3000);
+    },
+    onError: (err) => {
+      setOpenaiSaveStatus("error");
+      setError(err.message);
+    },
+  });
+
   useEffect(() => {
     if (settingsQuery.data) {
       setVaultName(settingsQuery.data.vaultName || "");
       setIncomingFolder(settingsQuery.data.incomingFolder || "");
+      setFileCheckInterval(settingsQuery.data.fileCheckInterval ?? 10);
+      setOpenaiApiKey(settingsQuery.data.openaiApiKey || "");
+      setOpenaiModel(settingsQuery.data.openaiModel || "gpt-4o-audio-preview");
+      setMaxRetries(settingsQuery.data.maxRetries ?? 5);
     }
   }, [settingsQuery.data]);
 
@@ -130,6 +164,46 @@ export function SettingsPage({ user }: SettingsPageProps) {
       audioPermission: "denied",
     });
   };
+
+  const handleSaveFileCheckInterval = () => {
+    if (fileCheckInterval < 5 || fileCheckInterval > 3600) {
+      setError("File check interval must be between 5 and 3600 seconds");
+      setIntervalSaveStatus("error");
+      return;
+    }
+
+    setIntervalSaveStatus("saving");
+    setError(null);
+    updateFileCheckIntervalMutation.mutate({
+      fileCheckInterval,
+    });
+  };
+
+  const hasIntervalChanges =
+    settingsQuery.data &&
+    fileCheckInterval !== (settingsQuery.data.fileCheckInterval ?? 10);
+
+  const handleSaveOpenaiSettings = () => {
+    if (maxRetries < 1 || maxRetries > 20) {
+      setError("Max retries must be between 1 and 20");
+      setOpenaiSaveStatus("error");
+      return;
+    }
+
+    setOpenaiSaveStatus("saving");
+    setError(null);
+    updateOpenaiSettingsMutation.mutate({
+      openaiApiKey: openaiApiKey || null,
+      openaiModel,
+      maxRetries,
+    });
+  };
+
+  const hasOpenaiChanges =
+    settingsQuery.data &&
+    (openaiApiKey !== (settingsQuery.data.openaiApiKey || "") ||
+      openaiModel !== (settingsQuery.data.openaiModel || "gpt-4o-audio-preview") ||
+      maxRetries !== (settingsQuery.data.maxRetries ?? 5));
 
   const handleSave = () => {
     if (!vaultName.trim() || !incomingFolder.trim()) {
@@ -467,6 +541,149 @@ export function SettingsPage({ user }: SettingsPageProps) {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* File Check Interval Section */}
+            <div className="space-y-3 pt-4 border-t">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base">File Check Interval</Label>
+                  <p className="text-xs text-muted-foreground">
+                    How often to check for new files in the incoming folder (seconds)
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                  <Clock className="h-3 w-3" />
+                  <span>{settingsQuery.data?.fileCheckInterval ?? 10}s</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    min={5}
+                    max={3600}
+                    value={fileCheckInterval}
+                    onChange={(e) => setFileCheckInterval(parseInt(e.target.value) || 10)}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={handleSaveFileCheckInterval}
+                    disabled={intervalSaveStatus === "saving" || !hasIntervalChanges}
+                    size="sm"
+                  >
+                    {intervalSaveStatus === "saving" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The system will check the incoming folder every {fileCheckInterval} seconds for new notes to process.
+                  Minimum: 5 seconds, Maximum: 3600 seconds (1 hour).
+                </p>
+
+                {intervalSaveStatus === "saved" && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 rounded-md p-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Interval saved</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* OpenAI Settings Section */}
+            <div className="space-y-4 pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <Key className="h-5 w-5 text-muted-foreground" />
+                <Label className="text-base font-medium">AI Extraction Settings</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Configure OpenAI API for audio transcription and content extraction.
+              </p>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="openai-api-key">OpenAI API Key</Label>
+                  <Input
+                    id="openai-api-key"
+                    type="password"
+                    placeholder="sk-..."
+                    value={openaiApiKey}
+                    onChange={(e) => setOpenaiApiKey(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Required for audio transcription. Get your key from{" "}
+                    <a
+                      href="https://platform.openai.com/api-keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      OpenAI Platform
+                    </a>
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="openai-model">Transcription Model</Label>
+                  <Input
+                    id="openai-model"
+                    type="text"
+                    placeholder="gpt-4o-audio-preview"
+                    value={openaiModel}
+                    onChange={(e) => setOpenaiModel(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Model used for audio processing. Default: gpt-4o-audio-preview (uses whisper-1 for transcription)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="max-retries">Max Retry Attempts</Label>
+                  </div>
+                  <Input
+                    id="max-retries"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={maxRetries}
+                    onChange={(e) => setMaxRetries(parseInt(e.target.value) || 5)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Number of times to retry failed extractions with exponential backoff (1-20)
+                  </p>
+                </div>
+
+                <Button
+                  onClick={handleSaveOpenaiSettings}
+                  disabled={openaiSaveStatus === "saving" || !hasOpenaiChanges}
+                  className="w-full"
+                >
+                  {openaiSaveStatus === "saving" ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save AI Settings
+                    </>
+                  )}
+                </Button>
+
+                {openaiSaveStatus === "saved" && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 rounded-md p-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>AI settings saved</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Back Link */}

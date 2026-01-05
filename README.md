@@ -279,6 +279,7 @@ Each user must configure their vault settings before sharing content. Access the
 | Incoming Folder | Folder inside vault for shared content | `incoming` or `inbox/shared` |
 | Location Sharing | Include location data in shared notes | Enabled/Disabled |
 | Audio Recording | Allow recording audio notes | Enabled/Disabled |
+| File Check Interval | How often to scan for new files (seconds) | `10` (default) |
 
 **Destination Path:** Files are saved to `/data/Documents/{vault-name}/{incoming-folder}/`
 
@@ -344,6 +345,38 @@ ob-share allows you to record audio notes directly from the dashboard and save t
 - Audio is recorded only when you initiate recording
 - Recordings are saved directly to your vault, never uploaded to external servers
 - You can disable audio recording at any time from Settings
+
+### Automated Content Extraction
+
+ob-share includes an automated system that periodically scans your incoming folder for new notes and extracts information from attached media files.
+
+**How it works:**
+1. The system runs a periodic check (configurable interval, default: 10 seconds)
+2. It scans the incoming folder for markdown files with `status: new` in frontmatter
+3. For each new file, it detects the content type (audio, video, image, or URL)
+4. It triggers an extraction workflow that processes the content using AI
+5. Extracted information is added to the note with the original content preserved
+6. The status is updated from `new` → `extracting` → `extracted`
+
+**Content types and extraction:**
+
+| Content Type | What Gets Extracted |
+|--------------|---------------------|
+| **Audio** | Speakers, transcription, intentions, background noises, mood, language |
+| **Video** | Speakers, transcription, scenes, visible texts, locations, actions, objects |
+| **Image** | Description, objects, people, visible text, diagrams, technical info, location |
+| **URL** | Title, summary, key points, main content, author, publish date |
+
+**Extracted information format:**
+- Extracted content is added at the top of the note under `## Extracted [Type] Content`
+- Original content is preserved under `## Original Content`
+- Frontmatter is updated with `status`, `extractedAt`, and `contentType`
+
+**Configuration:**
+- Adjust the file check interval in Settings (5-3600 seconds)
+- Requires API keys for AI processing:
+  - `ANTHROPIC_API_KEY` for image and text analysis
+  - `OPENAI_API_KEY` for audio transcription (Whisper)
 
 ### Navigation
 

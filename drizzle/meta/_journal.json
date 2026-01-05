@@ -36,6 +36,20 @@
       "when": 1767641634816,
       "tag": "0004_jazzy_metal_master",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1767649048223,
+      "tag": "0005_flowery_sleepwalker",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1767650114993,
+      "tag": "0006_parallel_epoch",
+      "breakpoints": true
     }
   ]
 }
