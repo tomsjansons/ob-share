@@ -503,21 +503,45 @@ export class FileChecker {
     // Get all user settings with configured vaults
     const allSettings = await db.select().from(userSettings);
 
+    logger.info({
+      event: "file-checker.check_all_vaults.start",
+      userCount: allSettings.length,
+    });
+
     let totalFilesFound = 0;
     let totalFilesProcessed = 0;
 
     for (const settings of allSettings) {
       if (!settings.vaultName || !settings.incomingFolder) {
+        logger.debug({
+          event: "file-checker.check_all_vaults.skip_user",
+          userId: settings.userId,
+          reason: "missing vaultName or incomingFolder",
+          vaultName: settings.vaultName,
+          incomingFolder: settings.incomingFolder,
+        });
         continue;
       }
 
       const incomingPath = path.join(DATA_ROOT, settings.vaultName, settings.incomingFolder);
+
+      logger.debug({
+        event: "file-checker.check_all_vaults.checking_vault",
+        userId: settings.userId,
+        vaultName: settings.vaultName,
+        incomingPath,
+      });
 
       try {
         // Check if incoming folder exists
         await fs.access(incomingPath);
       } catch {
         // Folder doesn't exist, skip this user
+        logger.debug({
+          event: "file-checker.check_all_vaults.folder_not_found",
+          userId: settings.userId,
+          incomingPath,
+        });
         continue;
       }
 
@@ -529,7 +553,21 @@ export class FileChecker {
       });
       totalFilesFound += result.filesFound;
       totalFilesProcessed += result.filesProcessed;
+
+      logger.debug({
+        event: "file-checker.check_all_vaults.vault_checked",
+        userId: settings.userId,
+        incomingPath,
+        filesFound: result.filesFound,
+        filesProcessed: result.filesProcessed,
+      });
     }
+
+    logger.info({
+      event: "file-checker.check_all_vaults.complete",
+      totalFilesFound,
+      totalFilesProcessed,
+    });
 
     return { filesFound: totalFilesFound, filesProcessed: totalFilesProcessed };
   }
@@ -549,8 +587,21 @@ export class FileChecker {
     let filesFound = 0;
     let filesProcessed = 0;
 
+    logger.info({
+      event: "file-checker.check_incoming_folder.start",
+      incomingPath,
+      userId: userConfig.userId,
+    });
+
     try {
       const entries = await fs.readdir(incomingPath, { withFileTypes: true });
+
+      logger.debug({
+        event: "file-checker.check_incoming_folder.entries_read",
+        incomingPath,
+        totalEntries: entries.length,
+        mdFiles: entries.filter(e => e.isFile() && e.name.endsWith(".md")).length,
+      });
 
       for (const entry of entries) {
         if (!entry.isFile() || !entry.name.endsWith(".md")) {
@@ -559,15 +610,38 @@ export class FileChecker {
 
         const filePath = path.join(incomingPath, entry.name);
 
+        logger.debug({
+          event: "file-checker.check_incoming_folder.checking_file",
+          filePath,
+          fileName: entry.name,
+        });
+
         try {
           const content = await fs.readFile(filePath, "utf-8");
           const { frontmatter } = parseFrontmatter(content);
+
+          logger.debug({
+            event: "file-checker.check_incoming_folder.frontmatter_parsed",
+            filePath,
+            status: frontmatter.status,
+            hasRetryNum: "retry-num" in frontmatter,
+            retryNum: frontmatter["retry-num"],
+            nextRetryAt: frontmatter["next-retry-at"],
+          });
 
           // Check if status is "new" or ready for retry
           const isNew = frontmatter.status === "new";
           const isRetryReady = isReadyForRetry(frontmatter);
 
           if (!isNew && !isRetryReady) {
+            logger.debug({
+              event: "file-checker.check_incoming_folder.skip_file",
+              filePath,
+              status: frontmatter.status,
+              isNew,
+              isRetryReady,
+              reason: "status is not 'new' and not ready for retry",
+            });
             continue;
           }
 
@@ -587,9 +661,31 @@ export class FileChecker {
           });
 
           // Update status to "extracting"
+          logger.debug({
+            event: "file-checker.check_incoming_folder.updating_status",
+            filePath,
+            oldStatus: frontmatter.status,
+            newStatus: "extracting",
+          });
+
           await updateFileStatus(filePath, "extracting");
 
+          logger.debug({
+            event: "file-checker.check_incoming_folder.status_updated",
+            filePath,
+            newStatus: "extracting",
+          });
+
           // Create workflow job for extraction with user config
+          logger.debug({
+            event: "file-checker.check_incoming_folder.creating_workflow_job",
+            filePath,
+            workflowId: "new-note-extract",
+            contentType,
+            isRetry,
+            retryNum,
+          });
+
           await createWorkflowJob({
             workflowId: "new-note-extract",
             trigger: {
@@ -618,6 +714,7 @@ export class FileChecker {
             event: "file-checker.file_process_error",
             filePath,
             error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
           });
         }
       }
@@ -626,8 +723,17 @@ export class FileChecker {
         event: "file-checker.folder_read_error",
         incomingPath,
         error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
       });
     }
+
+    logger.info({
+      event: "file-checker.check_incoming_folder.complete",
+      incomingPath,
+      userId: userConfig.userId,
+      filesFound,
+      filesProcessed,
+    });
 
     return { filesFound, filesProcessed };
   }
