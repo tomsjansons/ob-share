@@ -115,15 +115,15 @@ Consider:
 - What is the overall sentiment?
 
 Be thorough but concise in your analysis.`,
-      userPrompt: (ctx: WorkflowContext<ContentTrigger>) => `
+      userPrompt: (ctx) => `
 Please analyze and classify the following content:
 
 ---
-${ctx.trigger.content}
+${(ctx.trigger as ContentTrigger).content}
 ---
 
-${ctx.trigger.metadata?.source ? `Source: ${ctx.trigger.metadata.source}` : ""}
-${ctx.trigger.contentType ? `Content Type: ${ctx.trigger.contentType}` : ""}
+${(ctx.trigger as ContentTrigger).metadata?.source ? `Source: ${(ctx.trigger as ContentTrigger).metadata?.source}` : ""}
+${(ctx.trigger as ContentTrigger).contentType ? `Content Type: ${(ctx.trigger as ContentTrigger).contentType}` : ""}
 `,
       structuredOutput: {
         schema: ClassificationSchema,
@@ -138,7 +138,7 @@ ${ctx.trigger.contentType ? `Content Type: ${ctx.trigger.contentType}` : ""}
     defineTransformStep({
       id: "store-classification",
       name: "Store Classification",
-      transform: (ctx: WorkflowContext) => {
+      transform: (ctx) => {
         const classification = (ctx.stepOutputs["classify"] as { content: z.infer<typeof ClassificationSchema> })?.content;
         return classification;
       },
@@ -151,7 +151,7 @@ ${ctx.trigger.contentType ? `Content Type: ${ctx.trigger.contentType}` : ""}
     defineDecisionStep({
       id: "decide-action",
       name: "Decide Processing Action",
-      prompt: (ctx: WorkflowContext) => {
+      prompt: (ctx) => {
         const classification = ctx.variables.classification as z.infer<typeof ClassificationSchema>;
         return `Based on the content classification, decide what processing actions to take.
 
@@ -200,10 +200,10 @@ What actions should we take?`;
       id: "enrich-content",
       name: "Enrich Content",
       systemPrompt: "You are a content enrichment assistant. Add context, related concepts, and helpful annotations to the content.",
-      userPrompt: (ctx: WorkflowContext<ContentTrigger>) => `
+      userPrompt: (ctx) => `
 Enrich the following content with additional context:
 
-${ctx.trigger.content}
+${(ctx.trigger as ContentTrigger).content}
 
 Add:
 1. Key concepts explained
@@ -220,10 +220,10 @@ Add:
       id: "extract-tasks",
       name: "Extract Tasks",
       systemPrompt: "You are a task extraction assistant. Identify actionable items from content.",
-      userPrompt: (ctx: WorkflowContext<ContentTrigger>) => `
+      userPrompt: (ctx) => `
 Extract actionable tasks from the following content:
 
-${ctx.trigger.content}
+${(ctx.trigger as ContentTrigger).content}
 
 For each task, provide:
 - Task description
@@ -262,7 +262,8 @@ For each task, provide:
       id: "summarize",
       name: "Generate Summary",
       systemPrompt: "You are a summarization assistant. Create concise, informative summaries.",
-      userPrompt: (ctx: WorkflowContext<ContentTrigger>) => {
+      userPrompt: (ctx) => {
+        const trigger = ctx.trigger as ContentTrigger;
         const classification = ctx.variables.classification as z.infer<typeof ClassificationSchema>;
         const enrichment = ctx.stepOutputs["enrich-content"];
         const tasks = ctx.stepOutputs["extract-tasks"];
@@ -271,7 +272,7 @@ For each task, provide:
 Create a final summary of the processed content.
 
 Original Content:
-${ctx.trigger.content}
+${trigger.content}
 
 Classification: ${classification.category}
 Tags: ${classification.suggestedTags.join(", ")}
@@ -298,7 +299,8 @@ Provide a comprehensive but concise summary.
     defineTransformStep({
       id: "finalize",
       name: "Finalize Result",
-      transform: (ctx: WorkflowContext<ContentTrigger>): ContentResult => {
+      transform: (ctx): ContentResult => {
+        const trigger = ctx.trigger as ContentTrigger;
         const classification = ctx.variables.classification as z.infer<typeof ClassificationSchema>;
         const summary = ctx.stepOutputs["summarize"] as { content: { summary: string; keyPoints: string[] } };
         const enrichment = ctx.stepOutputs["enrich-content"] as { content: string } | undefined;
@@ -313,7 +315,7 @@ Provide a comprehensive but concise summary.
 
         return {
           classification,
-          processedContent: enrichment?.content ?? ctx.trigger.content,
+          processedContent: enrichment?.content ?? trigger.content,
           actions,
           finalSummary: summary?.content?.summary ?? classification.summary,
         };
