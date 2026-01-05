@@ -131,6 +131,8 @@ function getExtensionFromMimeType(mimeType: string): string {
     "audio/mp3": "mp3",
     "audio/wav": "wav",
     "audio/ogg": "ogg",
+    "audio/webm": "webm",
+    "audio/mp4": "m4a",
     "video/mp4": "mp4",
     "video/webm": "webm",
     "video/ogg": "ogv",
@@ -295,14 +297,20 @@ export async function saveToVault(options: SaveToVaultOptions): Promise<SaveResu
 
 /**
  * Converts a base64 data URL to a Buffer
+ * Handles MIME types with parameters like "audio/webm;codecs=opus"
  */
 export function dataUrlToBuffer(dataUrl: string): { buffer: Buffer; mimeType: string } {
-  const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  // Match data URLs with MIME types that may include parameters (e.g., audio/webm;codecs=opus)
+  // Format: data:<mimeType>[;<params>];base64,<data>
+  const matches = dataUrl.match(/^data:([^;,]+(?:;[^;,]+)*);base64,(.+)$/);
   if (!matches) {
     throw new Error("Invalid data URL format");
   }
 
-  const mimeType = matches[1];
+  // Extract the full MIME type including any parameters
+  const fullMimeType = matches[1];
+  // For file extension purposes, use only the base MIME type (before any semicolon params)
+  const mimeType = fullMimeType.split(";")[0];
   const base64Data = matches[2];
   const buffer = Buffer.from(base64Data, "base64");
 
