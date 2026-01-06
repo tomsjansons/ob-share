@@ -9,7 +9,7 @@ export default async function Home() {
   });
 
   if (session?.user) {
-    redirect("/account");
+    redirect("/dashboard");
   }
 
   return <LandingPage />;
