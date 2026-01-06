@@ -43,8 +43,10 @@ if mountpoint -q /data 2>/dev/null; then
     chown -h obsidian:obsidian /home/obsidian/Documents
     chown -h obsidian:obsidian /home/obsidian/.config/obsidian
 else
-    echo "[ENTRYPOINT] /data is NOT a mountpoint - volume may not be attached!"
-    ls -la /data 2>&1 || echo "[ENTRYPOINT] /data does not exist"
+    echo "[ENTRYPOINT] /data is NOT a mountpoint - creating directory for database..."
+    mkdir -p /data
+    chown obsidian:obsidian /data
+    ls -la /data 2>&1 || echo "[ENTRYPOINT] Failed to create /data"
 fi
 
 echo "[ENTRYPOINT] Volume setup complete, setting up VNC..."
