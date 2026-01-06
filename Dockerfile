@@ -122,8 +122,5 @@ ENV HOSTNAME=0.0.0.0
 # Expose VNC and Next.js ports
 EXPOSE 5900 3000
 
-# Volume for vault storage, Obsidian config, and persistent data
-VOLUME ["/home/obsidian/vault", "/home/obsidian/.config/obsidian", "/data"]
-
 # Set entrypoint
 ENTRYPOINT ["/entrypoint.sh"]

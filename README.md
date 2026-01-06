@@ -116,8 +116,7 @@ ob-share/
 │   ├── icon-192.svg        # PWA icon (192x192)
 │   └── icon-512.svg        # PWA icon (512x512)
 └── .github/
-    └── workflows/
-        └── railway-deploy.yml  # CI/CD workflow
+    └── workflows/          # GitHub Actions (if needed)
 ```
 
 ## Theme Support
@@ -476,16 +475,14 @@ Before deploying, set the required environment variables in Railway Dashboard:
 3. Attach the volume to your service
 4. Set mount path to `/data`
 
-#### Automatic Deployment (CI/CD)
+#### Automatic Deployment (GitHub Integration)
 
-Pushes to the `main` branch trigger automatic deployment via GitHub Actions.
+Railway's GitHub integration automatically deploys when you push to the connected branch.
 
 **Setup:**
 1. Create a Railway account at [railway.app](https://railway.app)
-2. Create a new project and note your project ID
-3. Go to Account Settings → Tokens → Create Token
-4. Add `RAILWAY_TOKEN` as a secret in your GitHub repository settings
-5. Push to `main` to trigger deployment
+2. Create a new project from your GitHub repository
+3. Railway will automatically deploy on every push to main
 
 #### Manual Deployment
 
