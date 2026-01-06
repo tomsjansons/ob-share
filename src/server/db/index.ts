@@ -19,11 +19,14 @@ function initializeDatabase(): BetterSQLite3Database<typeof schema> {
 
   const initStart = Date.now();
   try {
-    const dataDir = process.env.DATABASE_URL
-      ? path.dirname(process.env.DATABASE_URL)
-      : "./data";
+    // Use absolute path in production, relative in development
+    const isProduction = process.env.NODE_ENV === "production";
+    const defaultDbPath = isProduction ? "/data/ob-share.db" : "./data/ob-share.db";
+    const dbPath = process.env.DATABASE_URL || defaultDbPath;
 
-    logger.info({ event: "db.config", dataDir, elapsedMs: getElapsedMs() }, "Database data directory");
+    const dataDir = path.dirname(dbPath);
+
+    logger.info({ event: "db.config", dataDir, dbPath, isProduction, elapsedMs: getElapsedMs() }, "Database configuration");
 
     if (!fs.existsSync(dataDir)) {
       logger.info(
@@ -32,8 +35,6 @@ function initializeDatabase(): BetterSQLite3Database<typeof schema> {
       );
       fs.mkdirSync(dataDir, { recursive: true });
     }
-
-    const dbPath = process.env.DATABASE_URL || "./data/ob-share.db";
     logger.info(
       { event: "db.connection.opening", dbPath },
       "Opening database connection"
