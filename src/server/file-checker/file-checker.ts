@@ -65,15 +65,28 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
 }
 
 /**
+ * Escape a string value for YAML double-quoted strings
+ * Escapes backslashes first, then double quotes
+ */
+function escapeYamlString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\") // Escape backslashes first
+    .replace(/"/g, '\\"') // Escape double quotes
+    .replace(/\n/g, "\\n") // Escape newlines
+    .replace(/\r/g, "\\r") // Escape carriage returns
+    .replace(/\t/g, "\\t"); // Escape tabs
+}
+
+/**
  * Rebuild frontmatter to string
  */
 export function buildFrontmatter(frontmatter: Record<string, unknown>): string {
   const lines = ["---"];
   for (const [key, value] of Object.entries(frontmatter)) {
     if (Array.isArray(value)) {
-      lines.push(`${key}: [${value.map((v) => `"${v}"`).join(", ")}]`);
+      lines.push(`${key}: [${value.map((v) => `"${escapeYamlString(String(v))}"`).join(", ")}]`);
     } else if (typeof value === "string") {
-      lines.push(`${key}: "${value}"`);
+      lines.push(`${key}: "${escapeYamlString(value)}"`);
     } else if (value === null || value === undefined) {
       lines.push(`${key}: null`);
     } else {
