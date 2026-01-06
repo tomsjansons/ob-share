@@ -96,6 +96,8 @@ export const userSettings = sqliteTable("user_settings", {
   // OpenAI API configuration
   openaiApiKey: text("openai_api_key"),
   openaiModel: text("openai_model").notNull().default("gpt-4o-audio-preview"),
+  // Document analysis model (for PDF, DOC analysis)
+  documentAnalysisModel: text("document_analysis_model").notNull().default("gpt-4o"),
   // Maximum retry attempts for extraction (default: 5)
   maxRetries: integer("max_retries").notNull().default(5),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),

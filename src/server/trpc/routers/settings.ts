@@ -34,6 +34,7 @@ export const settingsRouter = router({
         fileCheckInterval: 10,
         openaiApiKey: null,
         openaiModel: "gpt-4o-audio-preview",
+        documentAnalysisModel: "gpt-4o",
         maxRetries: 5,
         createdAt: now,
         updatedAt: now,
@@ -47,12 +48,13 @@ export const settingsRouter = router({
         fileCheckInterval: 10,
         openaiApiKey: null,
         openaiModel: "gpt-4o-audio-preview",
+        documentAnalysisModel: "gpt-4o",
         maxRetries: 5,
         isComplete: false,
       };
     }
 
-    const { vaultName, incomingFolder, locationPermission, audioPermission, fileCheckInterval, openaiApiKey, openaiModel, maxRetries } = settings[0];
+    const { vaultName, incomingFolder, locationPermission, audioPermission, fileCheckInterval, openaiApiKey, openaiModel, documentAnalysisModel, maxRetries } = settings[0];
     const isComplete = Boolean(vaultName && incomingFolder && openaiApiKey);
 
     logger.debug({
@@ -71,6 +73,7 @@ export const settingsRouter = router({
       fileCheckInterval,
       openaiApiKey,
       openaiModel,
+      documentAnalysisModel,
       maxRetries,
       isComplete,
     };
@@ -321,6 +324,7 @@ export const settingsRouter = router({
       z.object({
         openaiApiKey: z.string().nullable(),
         openaiModel: z.string().min(1),
+        documentAnalysisModel: z.string().min(1),
         maxRetries: z.number().min(1).max(20),
       })
     )
@@ -330,6 +334,7 @@ export const settingsRouter = router({
       logger.info({
         event: "settings.updateOpenaiSettings.start",
         openaiModel: input.openaiModel,
+        documentAnalysisModel: input.documentAnalysisModel,
         maxRetries: input.maxRetries,
         hasApiKey: Boolean(input.openaiApiKey),
       });
@@ -352,6 +357,7 @@ export const settingsRouter = router({
           fileCheckInterval: 10,
           openaiApiKey: input.openaiApiKey,
           openaiModel: input.openaiModel,
+          documentAnalysisModel: input.documentAnalysisModel,
           maxRetries: input.maxRetries,
           createdAt: now,
           updatedAt: now,
@@ -360,6 +366,7 @@ export const settingsRouter = router({
         logger.info({
           event: "settings.updateOpenaiSettings.created",
           openaiModel: input.openaiModel,
+          documentAnalysisModel: input.documentAnalysisModel,
           maxRetries: input.maxRetries,
         });
       } else {
@@ -368,6 +375,7 @@ export const settingsRouter = router({
           .set({
             openaiApiKey: input.openaiApiKey,
             openaiModel: input.openaiModel,
+            documentAnalysisModel: input.documentAnalysisModel,
             maxRetries: input.maxRetries,
             updatedAt: now,
           })
@@ -376,6 +384,7 @@ export const settingsRouter = router({
         logger.info({
           event: "settings.updateOpenaiSettings.updated",
           openaiModel: input.openaiModel,
+          documentAnalysisModel: input.documentAnalysisModel,
           maxRetries: input.maxRetries,
         });
       }
@@ -383,6 +392,7 @@ export const settingsRouter = router({
       return {
         success: true,
         openaiModel: input.openaiModel,
+        documentAnalysisModel: input.documentAnalysisModel,
         maxRetries: input.maxRetries,
       };
     }),
