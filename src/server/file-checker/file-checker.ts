@@ -107,6 +107,19 @@ function unescapeYamlString(value: string): string {
 }
 
 /**
+ * Sanitize a string for safe storage in YAML frontmatter
+ * Removes newlines and other characters that could break YAML structure
+ */
+function sanitizeForFrontmatter(value: string): string {
+  return value
+    .replace(/\r\n/g, " ") // Replace Windows newlines with space
+    .replace(/\n/g, " ") // Replace Unix newlines with space
+    .replace(/\r/g, " ") // Replace carriage returns with space
+    .replace(/\s+/g, " ") // Collapse multiple whitespace into single space
+    .trim();
+}
+
+/**
  * Rebuild frontmatter to string
  */
 export function buildFrontmatter(frontmatter: Record<string, unknown>): string {
@@ -185,9 +198,9 @@ export async function updateFileWithError(
     // Check if we should retry
     const shouldRetry = newRetryNum <= maxRetries;
 
-    // Update frontmatter
+    // Update frontmatter (sanitize error to remove newlines from JSON responses)
     frontmatter["retry-num"] = newRetryNum;
-    frontmatter["last-error"] = error;
+    frontmatter["last-error"] = sanitizeForFrontmatter(error);
     frontmatter["last-error-at"] = new Date().toISOString();
 
     if (shouldRetry) {
