@@ -53,7 +53,7 @@ export const settingsRouter = router({
     }
 
     const { vaultName, incomingFolder, locationPermission, audioPermission, fileCheckInterval, openaiApiKey, openaiModel, maxRetries } = settings[0];
-    const isComplete = Boolean(vaultName && incomingFolder);
+    const isComplete = Boolean(vaultName && incomingFolder && openaiApiKey);
 
     logger.debug({
       event: "settings.get.complete",
