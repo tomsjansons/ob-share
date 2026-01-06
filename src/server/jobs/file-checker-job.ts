@@ -184,13 +184,14 @@ function isReadyForRetry(frontmatter: Record<string, unknown>): boolean {
 /**
  * Detect content type from file content
  */
-function detectContentType(content: string, frontmatter: Record<string, unknown>): "audio" | "video" | "image" | "url" | "text" {
+function detectContentType(content: string, frontmatter: Record<string, unknown>): "audio" | "video" | "image" | "url" | "document" | "text" {
   const body = content.split("---").slice(2).join("---").trim();
 
-  // Check for embedded audio/video/image links
+  // Check for embedded audio/video/image/document links
   const audioExtensions = [".mp3", ".wav", ".ogg", ".webm", ".m4a"];
   const videoExtensions = [".mp4", ".webm", ".mov", ".avi", ".mkv"];
   const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
+  const documentExtensions = [".pdf", ".doc", ".docx", ".txt", ".md", ".markdown", ".rtf", ".odt", ".csv", ".rst"];
 
   // Look for wiki links like ![[filename.ext]] or [[filename.ext]]
   const wikiLinkRegex = /!?\[\[([^\]]+)\]\]/g;
@@ -206,6 +207,9 @@ function detectContentType(content: string, frontmatter: Record<string, unknown>
     }
     if (imageExtensions.some((ext) => filename.endsWith(ext))) {
       return "image";
+    }
+    if (documentExtensions.some((ext) => filename.endsWith(ext))) {
+      return "document";
     }
   }
 
@@ -227,6 +231,7 @@ async function scanIncomingFolder(
     userId: string;
     openaiApiKey?: string;
     openaiModel: string;
+    documentAnalysisModel: string;
     maxRetries: number;
   }
 ): Promise<{
@@ -289,6 +294,7 @@ async function scanIncomingFolder(
             userId: userConfig.userId,
             openaiApiKey: userConfig.openaiApiKey,
             openaiModel: userConfig.openaiModel,
+            documentAnalysisModel: userConfig.documentAnalysisModel,
             maxRetries: userConfig.maxRetries,
             isRetry,
             retryNum,
@@ -391,6 +397,7 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
               userId: settings.userId,
               openaiApiKey: settings.openaiApiKey ?? undefined,
               openaiModel: settings.openaiModel,
+              documentAnalysisModel: settings.documentAnalysisModel,
               maxRetries: settings.maxRetries,
             });
 

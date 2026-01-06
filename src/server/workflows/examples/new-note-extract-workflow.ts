@@ -30,6 +30,7 @@ import type {
   VideoExtractionResult,
   ImageExtractionResult,
   UrlExtractionResult,
+  DocumentExtractionResult,
 } from "../tools/ai-extraction-tools";
 
 const logger = baseLogger.child({ module: "new-note-extract-workflow" });
@@ -43,10 +44,11 @@ const logger = baseLogger.child({ module: "new-note-extract-workflow" });
  */
 export const NewNoteExtractTriggerSchema = z.object({
   filePath: z.string().describe("Path to the markdown file to process"),
-  contentType: z.enum(["audio", "video", "image", "url", "text"]).describe("Type of content in the note"),
+  contentType: z.enum(["audio", "video", "image", "url", "document", "text"]).describe("Type of content in the note"),
   userId: z.string().describe("ID of the user who owns this note"),
   openaiApiKey: z.string().optional().describe("OpenAI API key for transcription"),
   openaiModel: z.string().optional().describe("OpenAI model for transcription"),
+  documentAnalysisModel: z.string().optional().describe("OpenAI model for document analysis"),
   maxRetries: z.number().optional().describe("Maximum retry attempts"),
   isRetry: z.boolean().optional().describe("Whether this is a retry attempt"),
   retryNum: z.number().optional().describe("Current retry attempt number"),
@@ -457,6 +459,78 @@ function formatUrlExtraction(result: UrlExtractionResult): string {
   return sections.join("\n");
 }
 
+/**
+ * Format document extraction result as markdown
+ */
+function formatDocumentExtraction(result: DocumentExtractionResult): string {
+  const sections: string[] = [];
+
+  sections.push("## Extracted Document Content\n");
+
+  if (result.title) {
+    sections.push(`### ${result.title}\n`);
+  }
+
+  if (result.author) {
+    sections.push(`**Author**: ${result.author}`);
+  }
+
+  if (result.documentType) {
+    sections.push(`**Document Type**: ${result.documentType}`);
+  }
+
+  if (result.pageCount) {
+    sections.push(`**Pages**: ${result.pageCount}`);
+  }
+
+  if (result.language) {
+    sections.push(`**Language**: ${result.language}`);
+  }
+
+  sections.push("");
+
+  if (result.summary) {
+    sections.push(`### Summary\n${result.summary}\n`);
+  }
+
+  if (result.keyPoints && result.keyPoints.length > 0) {
+    sections.push("### Key Points");
+    for (const point of result.keyPoints) {
+      sections.push(`- ${point}`);
+    }
+    sections.push("");
+  }
+
+  if (result.topics && result.topics.length > 0) {
+    sections.push(`**Topics**: ${result.topics.join(", ")}\n`);
+  }
+
+  if (result.sections && result.sections.length > 0) {
+    sections.push("### Document Sections");
+    for (const section of result.sections) {
+      if (section.title) {
+        sections.push(`#### ${section.title}`);
+      }
+      sections.push(section.content.slice(0, 2000));
+      if (section.content.length > 2000) {
+        sections.push("*[Section truncated...]*");
+      }
+      sections.push("");
+    }
+  }
+
+  if (result.extractedText) {
+    sections.push("### Full Extracted Text");
+    sections.push(result.extractedText.slice(0, 10000));
+    if (result.extractedText.length > 10000) {
+      sections.push("\n*[Text truncated...]*");
+    }
+    sections.push("");
+  }
+
+  return sections.join("\n");
+}
+
 // =============================================================================
 // Workflow Definition
 // =============================================================================
@@ -634,7 +708,43 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
     })
   )
 
-  // Step 6: Update the file with extracted content
+  // Step 6: Process based on content type - Document
+  .step(
+    defineToolStep({
+      id: "extract-document",
+      name: "Extract Document Content",
+      toolName: "extract-document",
+      input: (ctx) => {
+        const trigger = ctx.trigger as NewNoteExtractTrigger;
+        const fileData = ctx.variables.fileData as { attachments?: string[] } | undefined;
+
+        if (!fileData?.attachments) {
+          throw new Error("No file data available");
+        }
+
+        // Find the first document attachment
+        const documentExtensions = [".pdf", ".doc", ".docx", ".txt", ".md", ".markdown", ".rtf", ".odt", ".csv", ".rst"];
+        const documentAttachment = fileData.attachments.find((a) =>
+          documentExtensions.some((ext) => a.toLowerCase().endsWith(ext))
+        );
+
+        if (!documentAttachment) {
+          throw new Error("No document attachment found");
+        }
+
+        return {
+          filePath: getAttachmentPath(trigger.filePath, documentAttachment),
+          openaiApiKey: trigger.openaiApiKey,
+          openaiModel: trigger.documentAnalysisModel,
+        };
+      },
+      condition: {
+        evaluate: (ctx) => (ctx.trigger as NewNoteExtractTrigger).contentType === "document",
+      },
+    })
+  )
+
+  // Step 7: Update the file with extracted content
   .step(
     defineTransformStep({
       id: "update-file",
@@ -695,6 +805,14 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
             }
             break;
           }
+          case "document": {
+            const documentResult = ctx.stepOutputs["extract-document"] as { output?: DocumentExtractionResult };
+            if (documentResult?.output) {
+              extractedContent = documentResult.output;
+              formattedExtraction = formatDocumentExtraction(documentResult.output);
+            }
+            break;
+          }
           case "text": {
             // No extraction needed for text
             formattedExtraction = "";
@@ -743,11 +861,12 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
   .entryStep("read-file")
 
   // Define transitions
-  .transition("read-file", ["extract-audio", "extract-video", "extract-image", "extract-url", "update-file"])
+  .transition("read-file", ["extract-audio", "extract-video", "extract-image", "extract-url", "extract-document", "update-file"])
   .transition("extract-audio", "update-file")
   .transition("extract-video", "update-file")
   .transition("extract-image", "update-file")
   .transition("extract-url", "update-file")
+  .transition("extract-document", "update-file")
 
   // Lifecycle hooks
   .onStart(async (instance) => {
