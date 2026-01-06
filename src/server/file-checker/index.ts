@@ -1,15 +1,17 @@
 /**
- * File Checker Module
+ * File Checker Utilities Module
  *
- * Periodic task for checking new files in incoming folder
- * and triggering extraction workflows.
+ * Provides utility functions for working with markdown files.
+ * Used by the file-checker job and extraction workflows.
+ *
+ * Note: File checking is now handled by a periodic job.
+ * See src/server/jobs/file-checker-job.ts for the job implementation.
  */
 
 export {
-  FileChecker,
-  getGlobalFileChecker,
-  resetGlobalFileChecker,
   updateFileStatus,
   updateFileWithError,
   getAttachmentPath,
+  parseFrontmatter,
+  buildFrontmatter,
 } from "./file-checker";

@@ -79,3 +79,18 @@ export { JobRegistry } from "./registry";
 
 // Queue scheduler
 export { QueueScheduler, getGlobalScheduler } from "./scheduler";
+
+// Periodic job service
+export {
+  registerPeriodicJob,
+  getAllPeriodicSchedules,
+  getPeriodicSchedule,
+  setPeriodicScheduleEnabled,
+  updatePeriodicScheduleInterval,
+  getDueSchedules,
+  processDueSchedules,
+  updateScheduleStats,
+  deletePeriodicSchedule,
+  type PeriodicJobConfig,
+  type PeriodicJobSchedule,
+} from "./periodic-job-service";

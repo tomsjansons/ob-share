@@ -11,6 +11,7 @@
 import { QueueHandler, getAliveHandlers, cleanupDeadHandlers } from "./queue-handler";
 import { JobRegistry } from "./registry";
 import { cleanupOldJobs, getHandlerHealth, getQueueStats } from "./job-service";
+import { processDueSchedules } from "./periodic-job-service";
 import { logger as baseLogger } from "@/lib/logger";
 import type { QueueEventHandler } from "./types";
 
@@ -175,6 +176,7 @@ export class QueueScheduler {
   async triggerProcessing(): Promise<{
     success: boolean;
     jobsProcessed: number;
+    periodicJobsCreated: number;
     duration: number;
     error?: string;
   }> {
@@ -182,6 +184,7 @@ export class QueueScheduler {
       return {
         success: false,
         jobsProcessed: 0,
+        periodicJobsCreated: 0,
         duration: 0,
         error: "Processing is already in progress",
       };
@@ -192,6 +195,27 @@ export class QueueScheduler {
     const startTime = Date.now();
 
     try {
+      // First, process any due periodic job schedules
+      // This creates new jobs for schedules that are due to run
+      logger.debug({ event: "scheduler.periodic.processing" }, "Processing periodic job schedules");
+      const periodicResult = await processDueSchedules();
+      const periodicJobsCreated = periodicResult.created.length;
+
+      if (periodicJobsCreated > 0) {
+        logger.info({
+          event: "scheduler.periodic.created",
+          count: periodicJobsCreated,
+          jobIds: periodicResult.created,
+        }, "Created periodic jobs");
+      }
+
+      if (periodicResult.errors.length > 0) {
+        logger.warn({
+          event: "scheduler.periodic.errors",
+          errors: periodicResult.errors,
+        }, "Errors creating periodic jobs");
+      }
+
       // Create a new handler for this run
       const definitions = JobRegistry.getAll();
       this.handler = new QueueHandler(definitions);
@@ -204,7 +228,7 @@ export class QueueScheduler {
       // Start the handler
       await this.handler.start();
 
-      // Process jobs
+      // Process jobs (including newly created periodic jobs)
       const jobsProcessed = await this.handler.triggerPoll();
 
       // Wait for current jobs to complete (with timeout)
@@ -226,9 +250,14 @@ export class QueueScheduler {
       this.status.totalRuns++;
       this.status.totalJobsProcessed += jobsProcessed;
 
-      logger.info({ event: "scheduler.processing_completed", jobsProcessed, durationMs: duration }, "Queue processing completed");
+      logger.info({
+        event: "scheduler.processing_completed",
+        jobsProcessed,
+        periodicJobsCreated,
+        durationMs: duration,
+      }, "Queue processing completed");
 
-      return { success: true, jobsProcessed, duration };
+      return { success: true, jobsProcessed, periodicJobsCreated, duration };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       const duration = Date.now() - startTime;
@@ -251,7 +280,7 @@ export class QueueScheduler {
         this.handler = null;
       }
 
-      return { success: false, jobsProcessed: 0, duration, error };
+      return { success: false, jobsProcessed: 0, periodicJobsCreated: 0, duration, error };
     } finally {
       this.isProcessing = false;
       this.status.isProcessing = false;
