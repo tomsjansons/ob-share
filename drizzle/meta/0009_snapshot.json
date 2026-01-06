@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4d45907f-63c7-43b1-b6d1-99c93bd0baf0",
-  "prevId": "d17f6afa-4a45-440d-9bf8-26919f97b2bb",
+  "id": "f1b4b332-1c93-4b2c-adad-72ca4c4c7d39",
+  "prevId": "4d45907f-63c7-43b1-b6d1-99c93bd0baf0",
   "tables": {
     "account": {
       "name": "account",
@@ -888,6 +888,29 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'gpt-4o-audio-preview'"
+        },
+        "text_llm_provider": {
+          "name": "text_llm_provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'anthropic'"
+        },
+        "text_llm_api_key": {
+          "name": "text_llm_api_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "text_llm_model": {
+          "name": "text_llm_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'claude-sonnet-4-20250514'"
         },
         "document_analysis_model": {
           "name": "document_analysis_model",

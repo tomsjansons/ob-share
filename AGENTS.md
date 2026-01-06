@@ -759,13 +759,14 @@ checker.stop();
 | `extract-video` | Extract audio + visual info from video files |
 | `extract-image` | Extract visual info, text, diagrams from images |
 | `extract-url` | Fetch and extract content from URLs |
+| `extract-document` | Extract text, summary, key points from documents (PDF, DOC, TXT, etc.) |
 
 ### Required API Keys
 
 | API Key | Used For | Configurable In Settings |
 |---------|----------|--------------------------|
 | `ANTHROPIC_API_KEY` | Image analysis | No (environment variable only) |
-| `OPENAI_API_KEY` | Audio transcription (Whisper API) | Yes (AI Extraction Settings) |
+| `OPENAI_API_KEY` | Audio transcription (Whisper API), document analysis | Yes (AI Extraction Settings) |
 | Text LLM API Key | URL summarization and content extraction | Yes (URL Summarization Settings) |
 
 **Note:** URL summarization supports both Anthropic and OpenAI providers. Users can configure their preferred provider, API key, and model in Settings → URL Summarization Settings.
@@ -792,3 +793,10 @@ The workflow updates the note file with:
 - Extracted content at the top under `## Extracted [Type] Content`
 - Original content preserved under `## Original Content`
 - Updated frontmatter with `status`, `extractedAt`, `contentType`
+
+### Document Analysis Configuration
+
+Document analysis uses OpenAI's models (configurable per-user in settings):
+- **Document Analysis Model**: Stored in `user_settings.documentAnalysisModel` (default: `gpt-4o`)
+- Supports PDF, DOC, DOCX, TXT, MD, CSV, RTF, ODT file types
+- Extracts: title, author, full text, summary, key points, sections, topics, language

@@ -116,10 +116,27 @@ export const UrlExtractionResultSchema = z.object({
   })),
 });
 
+export const DocumentExtractionResultSchema = z.object({
+  title: z.string().optional(),
+  author: z.string().optional(),
+  pageCount: z.number().optional(),
+  extractedText: z.string(),
+  summary: z.string(),
+  keyPoints: z.array(z.string()),
+  sections: z.array(z.object({
+    title: z.string().optional(),
+    content: z.string(),
+  })),
+  documentType: z.string(), // e.g., "pdf", "word document", "text file", "report", "manual"
+  language: z.string().optional(),
+  topics: z.array(z.string()),
+});
+
 export type AudioExtractionResult = z.infer<typeof AudioExtractionResultSchema>;
 export type VideoExtractionResult = z.infer<typeof VideoExtractionResultSchema>;
 export type ImageExtractionResult = z.infer<typeof ImageExtractionResultSchema>;
 export type UrlExtractionResult = z.infer<typeof UrlExtractionResultSchema>;
+export type DocumentExtractionResult = z.infer<typeof DocumentExtractionResultSchema>;
 
 /**
  * Read file as base64 for API upload
@@ -782,6 +799,289 @@ Respond in JSON format matching this schema:
 });
 
 /**
+ * Extract information from document files (PDF, DOC, TXT, etc.)
+ */
+export const extractDocumentTool = defineTool({
+  name: "extract-document",
+  description: "Extract text, structure, and metadata from document files (PDF, DOC, DOCX, TXT)",
+  category: "ai-extraction",
+  parameters: [
+    {
+      name: "filePath",
+      type: "string",
+      description: "Path to the document file",
+      required: true,
+    },
+    {
+      name: "openaiApiKey",
+      type: "string",
+      description: "OpenAI API key for document analysis",
+      required: false,
+    },
+    {
+      name: "openaiModel",
+      type: "string",
+      description: "OpenAI model to use (default: gpt-4o)",
+      required: false,
+    },
+  ],
+  inputSchema: z.object({
+    filePath: z.string(),
+    openaiApiKey: z.string().optional(),
+    openaiModel: z.string().optional(),
+  }),
+  outputSchema: DocumentExtractionResultSchema,
+  execute: async (input, context): Promise<ToolResult<DocumentExtractionResult>> => {
+    try {
+      context.logger.info("Extracting document content", { filePath: input.filePath });
+
+      // Get API key from input or environment
+      const apiKey = input.openaiApiKey ?? process.env.OPENAI_API_KEY;
+      const model = input.openaiModel ?? "gpt-4o";
+
+      if (!isValidApiKey(apiKey)) {
+        logger.warn({
+          event: "document_extraction.no_api_key",
+          filePath: input.filePath,
+        });
+
+        return {
+          success: false,
+          error: "OpenAI API key not configured. Please add your API key in Settings.",
+        };
+      }
+
+      // Read the document file
+      const ext = path.extname(input.filePath).toLowerCase();
+      let fileContent: string;
+      let documentType: string;
+
+      // Determine document type and read content
+      if ([".txt", ".md", ".markdown", ".rst", ".csv"].includes(ext)) {
+        // Text-based files - read directly
+        fileContent = await fs.readFile(input.filePath, "utf-8");
+        documentType = ext === ".txt" ? "text file" : ext === ".csv" ? "csv file" : "markdown";
+      } else if ([".pdf", ".doc", ".docx", ".rtf", ".odt"].includes(ext)) {
+        // Binary document files - read as base64 and use OpenAI Files API
+        const buffer = await fs.readFile(input.filePath);
+        const base64Data = buffer.toString("base64");
+
+        // For PDF and other binary docs, we'll need to use vision capabilities
+        // or the Assistants API. For now, we use vision model with the file
+        documentType = ext === ".pdf" ? "pdf" : ext === ".docx" ? "word document" : ext === ".doc" ? "word document (legacy)" : "document";
+
+        // Use OpenAI's vision model to analyze the document
+        // Send as base64 encoded data URL
+        const mimeTypes: Record<string, string> = {
+          ".pdf": "application/pdf",
+          ".doc": "application/msword",
+          ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          ".rtf": "application/rtf",
+          ".odt": "application/vnd.oasis.opendocument.text",
+        };
+        const mimeType = mimeTypes[ext] || "application/octet-stream";
+
+        // Create OpenAI client and analyze using chat with file upload
+        const analysisPrompt = `You are a document analysis assistant. Analyze this ${documentType} file and extract:
+
+1. Document title (if identifiable)
+2. Author (if mentioned)
+3. Complete text content - extract ALL readable text from the document
+4. A comprehensive summary (2-4 paragraphs)
+5. Key points (5-10 bullet points)
+6. Document sections with their content
+7. Main topics covered
+8. Language of the document
+
+Respond in JSON format matching this schema:
+{
+  "title": "string (optional)",
+  "author": "string (optional)",
+  "pageCount": number (optional),
+  "extractedText": "string - full extracted text",
+  "summary": "string - comprehensive summary",
+  "keyPoints": ["string - key point 1", "string - key point 2", ...],
+  "sections": [{"title": "string (optional)", "content": "string"}],
+  "documentType": "string - type of document",
+  "language": "string (optional)",
+  "topics": ["string - topic 1", "string - topic 2", ...]
+}`;
+
+        // Make API request with file
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "file",
+                    file: {
+                      filename: path.basename(input.filePath),
+                      file_data: `data:${mimeType};base64,${base64Data}`,
+                    },
+                  },
+                  {
+                    type: "text",
+                    text: analysisPrompt,
+                  },
+                ],
+              },
+            ],
+            max_tokens: 16000,
+            temperature: 0.3,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.text();
+
+          // If file upload fails, try with a simpler approach - read text if possible
+          logger.warn({
+            event: "document_extraction.file_upload_failed",
+            filePath: input.filePath,
+            error: errorBody,
+          });
+
+          // Fallback: Try to extract text from PDF using basic approach
+          return {
+            success: false,
+            error: `Failed to analyze document: ${response.status}. This may require pdf-parse library for text extraction. Error: ${errorBody.slice(0, 200)}`,
+          };
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || "{}";
+
+        try {
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]) as DocumentExtractionResult;
+            return {
+              success: true,
+              output: {
+                ...result,
+                documentType: result.documentType || documentType,
+              },
+            };
+          }
+          throw new Error("No JSON found in response");
+        } catch (parseErr) {
+          return {
+            success: true,
+            output: {
+              extractedText: content.slice(0, 5000),
+              summary: "Document analyzed but structured parsing failed",
+              keyPoints: [],
+              sections: [{ content: content.slice(0, 5000) }],
+              documentType,
+              topics: [],
+            },
+          };
+        }
+      } else {
+        return {
+          success: false,
+          error: `Unsupported document type: ${ext}. Supported: .pdf, .doc, .docx, .txt, .md, .csv, .rtf, .odt`,
+        };
+      }
+
+      // For text-based files, analyze with OpenAI
+      const analysisPrompt = `Analyze the following ${documentType} content and extract structured information:
+
+Document Content:
+${fileContent.slice(0, 50000)}
+
+${fileContent.length > 50000 ? "\n[Content truncated...]" : ""}
+
+Please extract:
+1. Document title (if identifiable from content)
+2. Author (if mentioned)
+3. A comprehensive summary (2-4 paragraphs)
+4. Key points (5-10 bullet points)
+5. Document sections with their content
+6. Main topics covered
+7. Language of the document
+
+Respond in JSON format matching this schema:
+{
+  "title": "string (optional)",
+  "author": "string (optional)",
+  "extractedText": "string - the original text (first 10000 chars)",
+  "summary": "string - comprehensive summary",
+  "keyPoints": ["string - key point 1", "string - key point 2", ...],
+  "sections": [{"title": "string (optional)", "content": "string"}],
+  "documentType": "string - type of document",
+  "language": "string (optional)",
+  "topics": ["string - topic 1", "string - topic 2", ...]
+}`;
+
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: analysisPrompt }],
+          max_tokens: 8000,
+          temperature: 0.3,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || "{}";
+
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const result = JSON.parse(jsonMatch[0]) as DocumentExtractionResult;
+          return {
+            success: true,
+            output: {
+              ...result,
+              extractedText: result.extractedText || fileContent.slice(0, 10000),
+              documentType: result.documentType || documentType,
+            },
+          };
+        }
+        throw new Error("No JSON found in response");
+      } catch (parseErr) {
+        // Return basic result if parsing fails
+        return {
+          success: true,
+          output: {
+            extractedText: fileContent.slice(0, 10000),
+            summary: content.slice(0, 1000),
+            keyPoints: [],
+            sections: [{ content: fileContent.slice(0, 5000) }],
+            documentType,
+            topics: [],
+          },
+        };
+      }
+    } catch (err) {
+      return {
+        success: false,
+        error: `Failed to extract document: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  },
+});
+
+/**
  * All AI extraction tools
  */
 export const aiExtractionTools = [
@@ -789,4 +1089,5 @@ export const aiExtractionTools = [
   extractVideoTool,
   extractImageTool,
   extractUrlTool,
+  extractDocumentTool,
 ];

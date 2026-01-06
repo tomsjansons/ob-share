@@ -39,6 +39,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
   const [textLlmProvider, setTextLlmProvider] = useState<"anthropic" | "openai">("anthropic");
   const [textLlmApiKey, setTextLlmApiKey] = useState("");
   const [textLlmModel, setTextLlmModel] = useState("claude-sonnet-4-20250514");
+  const [documentAnalysisModel, setDocumentAnalysisModel] = useState("gpt-4o");
   const [maxRetries, setMaxRetries] = useState(5);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [intervalSaveStatus, setIntervalSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -122,6 +123,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
       setTextLlmProvider(settingsQuery.data.textLlmProvider || "anthropic");
       setTextLlmApiKey(settingsQuery.data.textLlmApiKey || "");
       setTextLlmModel(settingsQuery.data.textLlmModel || "claude-sonnet-4-20250514");
+      setDocumentAnalysisModel(settingsQuery.data.documentAnalysisModel || "gpt-4o");
       setMaxRetries(settingsQuery.data.maxRetries ?? 5);
     }
   }, [settingsQuery.data]);
@@ -214,6 +216,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
     updateOpenaiSettingsMutation.mutate({
       openaiApiKey: openaiApiKey || null,
       openaiModel,
+      documentAnalysisModel,
       maxRetries,
     });
   };
@@ -222,6 +225,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
     settingsQuery.data &&
     (openaiApiKey !== (settingsQuery.data.openaiApiKey || "") ||
       openaiModel !== (settingsQuery.data.openaiModel || "gpt-4o-audio-preview") ||
+      documentAnalysisModel !== (settingsQuery.data.documentAnalysisModel || "gpt-4o") ||
       maxRetries !== (settingsQuery.data.maxRetries ?? 5));
 
   const handleSaveTextLlmSettings = () => {
@@ -673,6 +677,20 @@ export function SettingsPage({ user }: SettingsPageProps) {
                   />
                   <p className="text-xs text-muted-foreground">
                     Model used for audio processing. Default: gpt-4o-audio-preview (uses whisper-1 for transcription)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="document-analysis-model">Document Analysis Model</Label>
+                  <Input
+                    id="document-analysis-model"
+                    type="text"
+                    placeholder="gpt-4o"
+                    value={documentAnalysisModel}
+                    onChange={(e) => setDocumentAnalysisModel(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Model used for document analysis (PDF, DOC, etc.). Default: gpt-4o. Supports text extraction and summarization.
                   </p>
                 </div>
 

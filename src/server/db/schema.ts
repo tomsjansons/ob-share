@@ -107,6 +107,8 @@ export const userSettings = sqliteTable("user_settings", {
   textLlmProvider: text("text_llm_provider").$type<TextLlmProvider>().notNull().default("anthropic"),
   textLlmApiKey: text("text_llm_api_key"),
   textLlmModel: text("text_llm_model").notNull().default("claude-sonnet-4-20250514"),
+  // Document analysis model (for PDF, DOC analysis)
+  documentAnalysisModel: text("document_analysis_model").notNull().default("gpt-4o"),
   // Maximum retry attempts for extraction (default: 5)
   maxRetries: integer("max_retries").notNull().default(5),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
