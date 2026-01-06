@@ -40,6 +40,11 @@ const logger = baseLogger.child({ module: "new-note-extract-workflow" });
 // =============================================================================
 
 /**
+ * Text LLM provider type
+ */
+type TextLlmProvider = "anthropic" | "openai";
+
+/**
  * Trigger schema - what data starts the workflow
  */
 export const NewNoteExtractTriggerSchema = z.object({
@@ -48,6 +53,9 @@ export const NewNoteExtractTriggerSchema = z.object({
   userId: z.string().describe("ID of the user who owns this note"),
   openaiApiKey: z.string().optional().describe("OpenAI API key for transcription"),
   openaiModel: z.string().optional().describe("OpenAI model for transcription"),
+  textLlmProvider: z.enum(["anthropic", "openai"]).optional().describe("Text LLM provider for URL summarization"),
+  textLlmApiKey: z.string().optional().describe("API key for text LLM provider"),
+  textLlmModel: z.string().optional().describe("Model for text LLM provider"),
   documentAnalysisModel: z.string().optional().describe("OpenAI model for document analysis"),
   maxRetries: z.number().optional().describe("Maximum retry attempts"),
   isRetry: z.boolean().optional().describe("Whether this is a retry attempt"),
@@ -692,6 +700,7 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
       name: "Extract URL Content",
       toolName: "extract-url",
       input: (ctx) => {
+        const trigger = ctx.trigger as NewNoteExtractTrigger;
         const fileData = ctx.variables.fileData as { urls?: string[] } | undefined;
 
         if (!fileData?.urls || fileData.urls.length === 0) {
@@ -700,6 +709,9 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
 
         return {
           url: fileData.urls[0], // Process the first URL
+          textLlmProvider: trigger.textLlmProvider,
+          textLlmApiKey: trigger.textLlmApiKey,
+          textLlmModel: trigger.textLlmModel,
         };
       },
       condition: {

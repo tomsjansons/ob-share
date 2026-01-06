@@ -231,6 +231,9 @@ async function scanIncomingFolder(
     userId: string;
     openaiApiKey?: string;
     openaiModel: string;
+    textLlmProvider?: "anthropic" | "openai";
+    textLlmApiKey?: string;
+    textLlmModel?: string;
     documentAnalysisModel: string;
     maxRetries: number;
   }
@@ -294,6 +297,9 @@ async function scanIncomingFolder(
             userId: userConfig.userId,
             openaiApiKey: userConfig.openaiApiKey,
             openaiModel: userConfig.openaiModel,
+            textLlmProvider: userConfig.textLlmProvider,
+            textLlmApiKey: userConfig.textLlmApiKey,
+            textLlmModel: userConfig.textLlmModel,
             documentAnalysisModel: userConfig.documentAnalysisModel,
             maxRetries: userConfig.maxRetries,
             isRetry,
@@ -397,6 +403,9 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
               userId: settings.userId,
               openaiApiKey: settings.openaiApiKey ?? undefined,
               openaiModel: settings.openaiModel,
+              textLlmProvider: settings.textLlmProvider ?? undefined,
+              textLlmApiKey: settings.textLlmApiKey ?? undefined,
+              textLlmModel: settings.textLlmModel ?? undefined,
               documentAnalysisModel: settings.documentAnalysisModel,
               maxRetries: settings.maxRetries,
             });
