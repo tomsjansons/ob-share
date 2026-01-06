@@ -263,7 +263,7 @@ export interface ParallelStepConfig extends BaseStepConfig {
  */
 export interface TransformStepConfig extends BaseStepConfig {
   type: "transform";
-  transform: (context: WorkflowContext) => unknown;
+  transform: (context: WorkflowContext) => unknown | Promise<unknown>;
   outputKey?: string; // Key to store result in variables
 }
 
