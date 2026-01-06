@@ -61,6 +61,7 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation \
     curl \
     ca-certificates \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 LTS
