@@ -436,7 +436,7 @@ The container uses supervisord to manage all services with automatic restart cap
 2. Database migrations run automatically
 3. Database is seeded with initial allow list
 4. supervisord launches services in priority order
-5. Next.js starts first and serves the web portal (enables fast Fly.io health checks)
+5. Next.js starts first and serves the web portal (enables fast health checks)
 6. Xvfb creates virtual display
 7. Openbox provides window management
 8. x11vnc exposes display over VNC
@@ -937,10 +937,10 @@ ToolRegistry.register(myTool);
 ## Security Considerations
 
 - **VNC Password:** Change the default password in production
-- **Network Exposure:** VNC is not exposed publicly on Fly.io
+- **Network Exposure:** VNC requires TCP Proxy setup in Railway to access externally
 - **Authentication:** GitHub OAuth with allow list restricts access
 - **Secrets:** Never commit `.env` files or secrets to version control
-- **HTTPS:** Enforced automatically on Fly.io
+- **HTTPS:** Enforced automatically on Railway
 - **Container Security:** Runs with `seccomp:unconfined` for Obsidian compatibility
 
 ## Use Cases
