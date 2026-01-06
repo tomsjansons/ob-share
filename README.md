@@ -280,6 +280,9 @@ Each user must configure their vault settings before sharing content. Access the
 | Location Sharing | Include location data in shared notes | Enabled/Disabled |
 | Audio Recording | Allow recording audio notes | Enabled/Disabled |
 | File Check Interval | How often to scan for new files (seconds) | `10` (default) |
+| Text LLM Provider | AI provider for URL summarization | `anthropic` or `openai` |
+| Text LLM API Key | API key for URL summarization | Your API key |
+| Text LLM Model | Model to use for summarization | `claude-sonnet-4-20250514` or `gpt-4o` |
 
 **Destination Path:** Files are saved to `/data/Documents/{vault-name}/{incoming-folder}/`
 
@@ -374,8 +377,14 @@ ob-share includes an automated system that periodically scans your incoming fold
 
 **Configuration:**
 - Adjust the file check interval in Settings (5-3600 seconds)
-- Requires API keys for AI processing:
-  - `ANTHROPIC_API_KEY` for image and text analysis
+- API keys can be configured per-user in Settings or via environment variables:
+  - **URL Summarization**: Configure in Settings → URL Summarization Settings
+    - Choose provider: Anthropic (Claude) or OpenAI (GPT)
+    - Enter your API key and select a model
+  - **Audio Transcription**: Configure in Settings → AI Extraction Settings (OpenAI)
+  - **Image Analysis**: Uses `ANTHROPIC_API_KEY` environment variable
+- Required environment variables (fallback if not configured in Settings):
+  - `ANTHROPIC_API_KEY` for image analysis
   - `OPENAI_API_KEY` for audio transcription (Whisper)
 
 ### Navigation

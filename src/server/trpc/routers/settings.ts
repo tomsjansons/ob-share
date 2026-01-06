@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../trpc";
 import { db } from "@/server/db";
-import { userSettings, type LocationPermissionStatus, type AudioPermissionStatus } from "@/server/db/schema";
+import { userSettings, type LocationPermissionStatus, type AudioPermissionStatus, type TextLlmProvider } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 
 export const settingsRouter = router({
@@ -34,6 +34,9 @@ export const settingsRouter = router({
         fileCheckInterval: 10,
         openaiApiKey: null,
         openaiModel: "gpt-4o-audio-preview",
+        textLlmProvider: "anthropic",
+        textLlmApiKey: null,
+        textLlmModel: "claude-sonnet-4-20250514",
         maxRetries: 5,
         createdAt: now,
         updatedAt: now,
@@ -47,13 +50,16 @@ export const settingsRouter = router({
         fileCheckInterval: 10,
         openaiApiKey: null,
         openaiModel: "gpt-4o-audio-preview",
+        textLlmProvider: "anthropic" as TextLlmProvider,
+        textLlmApiKey: null,
+        textLlmModel: "claude-sonnet-4-20250514",
         maxRetries: 5,
         isComplete: false,
       };
     }
 
-    const { vaultName, incomingFolder, locationPermission, audioPermission, fileCheckInterval, openaiApiKey, openaiModel, maxRetries } = settings[0];
-    const isComplete = Boolean(vaultName && incomingFolder && openaiApiKey);
+    const { vaultName, incomingFolder, locationPermission, audioPermission, fileCheckInterval, openaiApiKey, openaiModel, textLlmProvider, textLlmApiKey, textLlmModel, maxRetries } = settings[0];
+    const isComplete = Boolean(vaultName && incomingFolder && (openaiApiKey || textLlmApiKey));
 
     logger.debug({
       event: "settings.get.complete",
@@ -61,6 +67,7 @@ export const settingsRouter = router({
       locationPermission,
       audioPermission,
       fileCheckInterval,
+      textLlmProvider,
     });
 
     return {
@@ -71,6 +78,9 @@ export const settingsRouter = router({
       fileCheckInterval,
       openaiApiKey,
       openaiModel,
+      textLlmProvider,
+      textLlmApiKey,
+      textLlmModel,
       maxRetries,
       isComplete,
     };
@@ -384,6 +394,77 @@ export const settingsRouter = router({
         success: true,
         openaiModel: input.openaiModel,
         maxRetries: input.maxRetries,
+      };
+    }),
+
+  updateTextLlmSettings: protectedProcedure
+    .input(
+      z.object({
+        textLlmProvider: z.enum(["anthropic", "openai"]),
+        textLlmApiKey: z.string().nullable(),
+        textLlmModel: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { logger } = ctx;
+
+      logger.info({
+        event: "settings.updateTextLlmSettings.start",
+        textLlmProvider: input.textLlmProvider,
+        textLlmModel: input.textLlmModel,
+        hasApiKey: Boolean(input.textLlmApiKey),
+      });
+
+      const existingSettings = await db
+        .select()
+        .from(userSettings)
+        .where(eq(userSettings.userId, ctx.session.user.id))
+        .limit(1);
+
+      const now = new Date();
+
+      if (existingSettings.length === 0) {
+        await db.insert(userSettings).values({
+          userId: ctx.session.user.id,
+          vaultName: null,
+          incomingFolder: null,
+          locationPermission: "not_asked",
+          audioPermission: "not_asked",
+          fileCheckInterval: 10,
+          textLlmProvider: input.textLlmProvider,
+          textLlmApiKey: input.textLlmApiKey,
+          textLlmModel: input.textLlmModel,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        logger.info({
+          event: "settings.updateTextLlmSettings.created",
+          textLlmProvider: input.textLlmProvider,
+          textLlmModel: input.textLlmModel,
+        });
+      } else {
+        await db
+          .update(userSettings)
+          .set({
+            textLlmProvider: input.textLlmProvider,
+            textLlmApiKey: input.textLlmApiKey,
+            textLlmModel: input.textLlmModel,
+            updatedAt: now,
+          })
+          .where(eq(userSettings.userId, ctx.session.user.id));
+
+        logger.info({
+          event: "settings.updateTextLlmSettings.updated",
+          textLlmProvider: input.textLlmProvider,
+          textLlmModel: input.textLlmModel,
+        });
+      }
+
+      return {
+        success: true,
+        textLlmProvider: input.textLlmProvider,
+        textLlmModel: input.textLlmModel,
       };
     }),
 });

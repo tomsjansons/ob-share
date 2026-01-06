@@ -164,6 +164,9 @@ The app saves shared content to the Obsidian vault automatically. Vault path is 
 Each user must configure their vault settings before sharing works:
 - **Vault Name**: Name of the Obsidian vault folder (e.g., `my-vault`)
 - **Incoming Folder**: Folder inside vault for shared content (e.g., `incoming`)
+- **Text LLM Provider**: AI provider for URL summarization (`anthropic` or `openai`)
+- **Text LLM API Key**: API key for the selected provider
+- **Text LLM Model**: Model to use for URL summarization
 
 Settings are stored in the `user_settings` table with foreign key to `user`.
 
@@ -759,10 +762,13 @@ checker.stop();
 
 ### Required API Keys
 
-| API Key | Used For |
-|---------|----------|
-| `ANTHROPIC_API_KEY` | Image analysis, content analysis, URL processing |
-| `OPENAI_API_KEY` | Audio transcription (Whisper API) |
+| API Key | Used For | Configurable In Settings |
+|---------|----------|--------------------------|
+| `ANTHROPIC_API_KEY` | Image analysis | No (environment variable only) |
+| `OPENAI_API_KEY` | Audio transcription (Whisper API) | Yes (AI Extraction Settings) |
+| Text LLM API Key | URL summarization and content extraction | Yes (URL Summarization Settings) |
+
+**Note:** URL summarization supports both Anthropic and OpenAI providers. Users can configure their preferred provider, API key, and model in Settings → URL Summarization Settings.
 
 ### Modifying File Checker Behavior
 
@@ -773,6 +779,7 @@ checker.stop();
 | Modify extraction workflow | `src/server/workflows/examples/new-note-extract-workflow.ts` |
 | Add new extraction tool | `src/server/workflows/tools/ai-extraction-tools.ts` |
 | Change AI models | `src/server/workflows/tools/ai-extraction-tools.ts` |
+| Modify URL extraction | `src/server/workflows/tools/ai-extraction-tools.ts` - `extractUrlTool` |
 
 ### Note Status Flow
 

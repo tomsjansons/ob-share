@@ -74,6 +74,13 @@ export type LocationPermissionStatus = "not_asked" | "granted" | "denied";
  */
 export type AudioPermissionStatus = "not_asked" | "granted" | "denied";
 
+/**
+ * Text LLM provider enum values:
+ * - anthropic: Use Anthropic Claude models
+ * - openai: Use OpenAI GPT models
+ */
+export type TextLlmProvider = "anthropic" | "openai";
+
 // User settings table for vault configuration
 export const userSettings = sqliteTable("user_settings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -93,9 +100,13 @@ export const userSettings = sqliteTable("user_settings", {
     .default("not_asked"),
   // File check interval in seconds (default: 10 seconds)
   fileCheckInterval: integer("file_check_interval").notNull().default(10),
-  // OpenAI API configuration
+  // OpenAI API configuration (for audio transcription)
   openaiApiKey: text("openai_api_key"),
   openaiModel: text("openai_model").notNull().default("gpt-4o-audio-preview"),
+  // Text LLM configuration (for URL summarization and text analysis)
+  textLlmProvider: text("text_llm_provider").$type<TextLlmProvider>().notNull().default("anthropic"),
+  textLlmApiKey: text("text_llm_api_key"),
+  textLlmModel: text("text_llm_model").notNull().default("claude-sonnet-4-20250514"),
   // Maximum retry attempts for extraction (default: 5)
   maxRetries: integer("max_retries").notNull().default(5),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),

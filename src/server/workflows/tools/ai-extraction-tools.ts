@@ -535,6 +535,68 @@ Respond in JSON format matching this schema:
 });
 
 /**
+ * Text LLM provider type
+ */
+type TextLlmProvider = "anthropic" | "openai";
+
+/**
+ * Call the configured text LLM for URL analysis
+ */
+async function callTextLlm(
+  prompt: string,
+  provider: TextLlmProvider,
+  apiKey: string,
+  model: string
+): Promise<string> {
+  if (provider === "anthropic") {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Anthropic API error: ${response.status} - ${errorBody}`);
+    }
+
+    const data = await response.json();
+    return data.content?.[0]?.text || "";
+  } else if (provider === "openai") {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "";
+  }
+
+  throw new Error(`Unsupported text LLM provider: ${provider}`);
+}
+
+/**
  * Extract information from URLs
  */
 export const extractUrlTool = defineTool({
@@ -548,14 +610,38 @@ export const extractUrlTool = defineTool({
       description: "The URL to fetch and extract information from",
       required: true,
     },
+    {
+      name: "textLlmProvider",
+      type: "string",
+      description: "Text LLM provider (anthropic or openai)",
+      required: false,
+    },
+    {
+      name: "textLlmApiKey",
+      type: "string",
+      description: "API key for the text LLM provider",
+      required: false,
+    },
+    {
+      name: "textLlmModel",
+      type: "string",
+      description: "Model to use for text analysis",
+      required: false,
+    },
   ],
   inputSchema: z.object({
     url: z.string(),
+    textLlmProvider: z.enum(["anthropic", "openai"]).optional(),
+    textLlmApiKey: z.string().optional(),
+    textLlmModel: z.string().optional(),
   }),
   outputSchema: UrlExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<UrlExtractionResult>> => {
     try {
-      context.logger.info("Extracting URL content", { url: input.url });
+      context.logger.info("Extracting URL content", {
+        url: input.url,
+        provider: input.textLlmProvider ?? "anthropic (default)",
+      });
 
       // Fetch the URL content
       const response = await fetch(input.url, {
@@ -570,12 +656,37 @@ export const extractUrlTool = defineTool({
 
       const html = await response.text();
 
-      // Use Claude to analyze the HTML content
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+      // Determine which provider and API key to use
+      const provider: TextLlmProvider = input.textLlmProvider ?? "anthropic";
+      let apiKey = input.textLlmApiKey;
+      let model = input.textLlmModel;
+
+      // Fall back to environment variables if no user settings provided
+      if (!apiKey) {
+        if (provider === "anthropic") {
+          apiKey = process.env.ANTHROPIC_API_KEY;
+          model = model ?? "claude-sonnet-4-20250514";
+        } else if (provider === "openai") {
+          apiKey = process.env.OPENAI_API_KEY;
+          model = model ?? "gpt-4o";
+        }
+      }
+
+      // Set default models if not specified
+      if (!model) {
+        model = provider === "anthropic" ? "claude-sonnet-4-20250514" : "gpt-4o";
+      }
+
       if (!apiKey) {
         // Basic extraction without AI
         const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
         const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
+
+        logger.warn({
+          event: "url_extraction.no_api_key",
+          url: input.url,
+          provider,
+        });
 
         return {
           success: true,
@@ -583,8 +694,8 @@ export const extractUrlTool = defineTool({
             url: input.url,
             title: titleMatch?.[1]?.trim(),
             description: descMatch?.[1]?.trim(),
-            mainContent: "[Configure ANTHROPIC_API_KEY for full content extraction]",
-            summary: "URL fetched successfully. Configure AI API key for full extraction.",
+            mainContent: `[Configure ${provider.toUpperCase()} API key for full content extraction]`,
+            summary: "URL fetched successfully. Configure AI API key in Settings for full extraction.",
             keyPoints: [],
             type: "webpage",
             images: [],
@@ -592,6 +703,13 @@ export const extractUrlTool = defineTool({
           },
         };
       }
+
+      logger.info({
+        event: "url_extraction.using_llm",
+        url: input.url,
+        provider,
+        model,
+      });
 
       const analysisPrompt = `Analyze the following HTML content from ${input.url} and extract structured information:
 
@@ -625,27 +743,7 @@ Respond in JSON format matching this schema:
   "links": [{"text": "string", "url": "string"}]
 }`;
 
-      const analysisResponse = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4096,
-          messages: [{ role: "user", content: analysisPrompt }],
-        }),
-      });
-
-      if (!analysisResponse.ok) {
-        const errorBody = await analysisResponse.text();
-        throw new Error(`Claude API error: ${analysisResponse.status} - ${errorBody}`);
-      }
-
-      const data = await analysisResponse.json();
-      const content = data.content?.[0]?.text || "{}";
+      const content = await callTextLlm(analysisPrompt, provider, apiKey, model);
 
       try {
         const jsonMatch = content.match(/\{[\s\S]*\}/);

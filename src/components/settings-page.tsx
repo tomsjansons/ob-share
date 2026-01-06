@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff, Clock, Key, RefreshCw } from "lucide-react";
+import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff, Clock, Key, RefreshCw, Globe } from "lucide-react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -36,10 +36,14 @@ export function SettingsPage({ user }: SettingsPageProps) {
   const [fileCheckInterval, setFileCheckInterval] = useState(10);
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const [openaiModel, setOpenaiModel] = useState("gpt-4o-audio-preview");
+  const [textLlmProvider, setTextLlmProvider] = useState<"anthropic" | "openai">("anthropic");
+  const [textLlmApiKey, setTextLlmApiKey] = useState("");
+  const [textLlmModel, setTextLlmModel] = useState("claude-sonnet-4-20250514");
   const [maxRetries, setMaxRetries] = useState(5);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [intervalSaveStatus, setIntervalSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [openaiSaveStatus, setOpenaiSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [textLlmSaveStatus, setTextLlmSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [locationRequesting, setLocationRequesting] = useState(false);
   const [audioRequesting, setAudioRequesting] = useState(false);
@@ -96,6 +100,18 @@ export function SettingsPage({ user }: SettingsPageProps) {
     },
   });
 
+  const updateTextLlmSettingsMutation = trpc.settings.updateTextLlmSettings.useMutation({
+    onSuccess: () => {
+      setTextLlmSaveStatus("saved");
+      settingsQuery.refetch();
+      setTimeout(() => setTextLlmSaveStatus("idle"), 3000);
+    },
+    onError: (err) => {
+      setTextLlmSaveStatus("error");
+      setError(err.message);
+    },
+  });
+
   useEffect(() => {
     if (settingsQuery.data) {
       setVaultName(settingsQuery.data.vaultName || "");
@@ -103,6 +119,9 @@ export function SettingsPage({ user }: SettingsPageProps) {
       setFileCheckInterval(settingsQuery.data.fileCheckInterval ?? 10);
       setOpenaiApiKey(settingsQuery.data.openaiApiKey || "");
       setOpenaiModel(settingsQuery.data.openaiModel || "gpt-4o-audio-preview");
+      setTextLlmProvider(settingsQuery.data.textLlmProvider || "anthropic");
+      setTextLlmApiKey(settingsQuery.data.textLlmApiKey || "");
+      setTextLlmModel(settingsQuery.data.textLlmModel || "claude-sonnet-4-20250514");
       setMaxRetries(settingsQuery.data.maxRetries ?? 5);
     }
   }, [settingsQuery.data]);
@@ -204,6 +223,22 @@ export function SettingsPage({ user }: SettingsPageProps) {
     (openaiApiKey !== (settingsQuery.data.openaiApiKey || "") ||
       openaiModel !== (settingsQuery.data.openaiModel || "gpt-4o-audio-preview") ||
       maxRetries !== (settingsQuery.data.maxRetries ?? 5));
+
+  const handleSaveTextLlmSettings = () => {
+    setTextLlmSaveStatus("saving");
+    setError(null);
+    updateTextLlmSettingsMutation.mutate({
+      textLlmProvider,
+      textLlmApiKey: textLlmApiKey || null,
+      textLlmModel,
+    });
+  };
+
+  const hasTextLlmChanges =
+    settingsQuery.data &&
+    (textLlmProvider !== (settingsQuery.data.textLlmProvider || "anthropic") ||
+      textLlmApiKey !== (settingsQuery.data.textLlmApiKey || "") ||
+      textLlmModel !== (settingsQuery.data.textLlmModel || "claude-sonnet-4-20250514"));
 
   const handleSave = () => {
     if (!vaultName.trim() || !incomingFolder.trim()) {
@@ -681,6 +716,127 @@ export function SettingsPage({ user }: SettingsPageProps) {
                   <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 rounded-md p-2">
                     <CheckCircle2 className="h-4 w-4" />
                     <span>AI settings saved</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Text LLM Settings Section */}
+            <div className="space-y-4 pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-muted-foreground" />
+                <Label className="text-base font-medium">URL Summarization Settings</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Configure the LLM provider for URL content extraction and summarization.
+              </p>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="text-llm-provider">LLM Provider</Label>
+                  <select
+                    id="text-llm-provider"
+                    value={textLlmProvider}
+                    onChange={(e) => {
+                      const provider = e.target.value as "anthropic" | "openai";
+                      setTextLlmProvider(provider);
+                      // Set default model when provider changes
+                      if (provider === "anthropic") {
+                        setTextLlmModel("claude-sonnet-4-20250514");
+                      } else {
+                        setTextLlmModel("gpt-4o");
+                      }
+                    }}
+                    className="w-full h-10 px-3 py-2 text-sm border rounded-md bg-background"
+                  >
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai">OpenAI (GPT)</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Choose which AI provider to use for URL content summarization
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="text-llm-api-key">
+                    {textLlmProvider === "anthropic" ? "Anthropic API Key" : "OpenAI API Key"}
+                  </Label>
+                  <Input
+                    id="text-llm-api-key"
+                    type="password"
+                    placeholder={textLlmProvider === "anthropic" ? "sk-ant-..." : "sk-..."}
+                    value={textLlmApiKey}
+                    onChange={(e) => setTextLlmApiKey(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Required for URL summarization. Get your key from{" "}
+                    {textLlmProvider === "anthropic" ? (
+                      <a
+                        href="https://console.anthropic.com/settings/keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Anthropic Console
+                      </a>
+                    ) : (
+                      <a
+                        href="https://platform.openai.com/api-keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        OpenAI Platform
+                      </a>
+                    )}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="text-llm-model">Model</Label>
+                  <Input
+                    id="text-llm-model"
+                    type="text"
+                    placeholder={textLlmProvider === "anthropic" ? "claude-sonnet-4-20250514" : "gpt-4o"}
+                    value={textLlmModel}
+                    onChange={(e) => setTextLlmModel(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {textLlmProvider === "anthropic"
+                      ? "Default: claude-sonnet-4-20250514. Other options: claude-opus-4-20250514, claude-3-5-haiku-20241022"
+                      : "Default: gpt-4o. Other options: gpt-4o-mini, gpt-4-turbo"}
+                  </p>
+                </div>
+
+                <Button
+                  onClick={handleSaveTextLlmSettings}
+                  disabled={textLlmSaveStatus === "saving" || !hasTextLlmChanges}
+                  className="w-full"
+                >
+                  {textLlmSaveStatus === "saving" ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save URL Settings
+                    </>
+                  )}
+                </Button>
+
+                {textLlmSaveStatus === "saved" && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 rounded-md p-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>URL settings saved</span>
+                  </div>
+                )}
+
+                {textLlmSaveStatus === "error" && error && (
+                  <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md p-2">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>{error}</span>
                   </div>
                 )}
               </div>
