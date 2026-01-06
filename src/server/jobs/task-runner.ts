@@ -21,6 +21,14 @@ import type {
 // Module logger for task runner
 const logger = baseLogger.child({ module: "task-runner" });
 
+/**
+ * Yield to the event loop to allow HTTP requests to be processed.
+ * This is necessary because better-sqlite3 is synchronous and blocks the event loop.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 interface ExecutionResult {
   success: boolean;
   output?: unknown;
@@ -70,6 +78,9 @@ export class TaskRunner {
     }
 
     for (let i = 0; i < phases.length; i++) {
+      // Yield to event loop between processing each phase
+      await yieldToEventLoop();
+
       const phaseRecord = phases[i];
       const phaseDefinition = definition.phases[i];
 

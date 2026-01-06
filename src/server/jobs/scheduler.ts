@@ -19,6 +19,14 @@ import type { QueueEventHandler } from "./types";
 const logger = baseLogger.child({ module: "queue-scheduler" });
 
 /**
+ * Yield to the event loop to allow HTTP requests to be processed.
+ * This is necessary because better-sqlite3 is synchronous and blocks the event loop.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
  * Default interval: 30 minutes in milliseconds
  */
 const DEFAULT_INTERVAL_MS = 30 * 60 * 1000;
@@ -234,6 +242,8 @@ export class QueueScheduler {
       // Wait for current jobs to complete (with timeout)
       const deadline = Date.now() + this.config.processingTimeout;
       while (this.handler.getStats().currentJobs.length > 0 && Date.now() < deadline) {
+        // Use setImmediate to yield more frequently to the event loop
+        await yieldToEventLoop();
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
 

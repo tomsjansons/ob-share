@@ -29,6 +29,14 @@ import { TaskRunner } from "./task-runner";
 const logger = baseLogger.child({ module: "queue-handler" });
 
 /**
+ * Yield to the event loop to allow HTTP requests to be processed.
+ * This is necessary because better-sqlite3 is synchronous and blocks the event loop.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
  * Queue Handler manages the lifecycle of background job processing.
  */
 export class QueueHandler {
@@ -153,6 +161,8 @@ export class QueueHandler {
     // Wait for jobs to complete (with timeout)
     const deadline = Date.now() + this.config.shutdownTimeout;
     while (this.currentJobs.size > 0 && Date.now() < deadline) {
+      // Yield to event loop to keep HTTP responsive during shutdown
+      await yieldToEventLoop();
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
@@ -244,6 +254,9 @@ export class QueueHandler {
     // First, handle stalled jobs (visibility timeout expired)
     await this.handleStalledJobs();
 
+    // Yield to event loop after database operation
+    await yieldToEventLoop();
+
     // Get available slots
     const availableSlots = this.config.concurrency - this.currentJobs.size;
     if (availableSlots <= 0) {
@@ -287,6 +300,9 @@ export class QueueHandler {
     let processedCount = 0;
 
     for (const job of pendingJobs) {
+      // Yield to event loop between processing each job
+      await yieldToEventLoop();
+
       logger.debug({
         event: "queue.process.claiming_job",
         handlerId: this.config.handlerId,
