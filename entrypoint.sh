@@ -83,11 +83,13 @@ echo "[MIGRATION] Node version: $(node --version)"
 echo "[MIGRATION] DATABASE_URL env: ${DATABASE_URL:-not set}"
 echo "[MIGRATION] Files in /data before migration:"
 ls -la /data/ 2>&1 || echo "[MIGRATION] /data directory does not exist"
+echo "[MIGRATION] Checking for stale database at /app/data/:"
+ls -la /app/data/ 2>&1 || echo "[MIGRATION] /app/data/ does not exist (good)"
 
 # Run migrations using the TypeScript migration script via tsx
 npx tsx scripts/migrate.ts 2>&1 || {
-    echo "[MIGRATION] Migration script failed, attempting drizzle-kit fallback..."
-    npx drizzle-kit migrate 2>&1 || echo "[MIGRATION] Drizzle-kit migrate also failed"
+    echo "[MIGRATION] Migration script failed!"
+    echo "[MIGRATION] Check logs above for details"
 }
 
 echo "[MIGRATION] Files in /data after migration:"
