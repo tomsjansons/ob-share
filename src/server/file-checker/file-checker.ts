@@ -52,6 +52,18 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
             // Keep as string if parsing fails
             value = strValue;
           }
+        } else if (strValue === "null") {
+          value = null;
+        } else if (strValue === "true") {
+          value = true;
+        } else if (strValue === "false") {
+          value = false;
+        } else if (/^-?\d+$/.test(strValue)) {
+          // Parse integers
+          value = parseInt(strValue, 10);
+        } else if (/^-?\d+\.\d+$/.test(strValue)) {
+          // Parse floats
+          value = parseFloat(strValue);
         } else {
           value = strValue;
         }

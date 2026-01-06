@@ -79,6 +79,18 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, unknow
             // Keep as string if parsing fails
             value = strValue;
           }
+        } else if (strValue === "null") {
+          value = null;
+        } else if (strValue === "true") {
+          value = true;
+        } else if (strValue === "false") {
+          value = false;
+        } else if (/^-?\d+$/.test(strValue)) {
+          // Parse integers
+          value = parseInt(strValue, 10);
+        } else if (/^-?\d+\.\d+$/.test(strValue)) {
+          // Parse floats
+          value = parseFloat(strValue);
         } else {
           value = strValue;
         }
@@ -92,15 +104,27 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, unknow
 }
 
 /**
+ * Escape a string value for YAML double-quoted strings
+ */
+function escapeYamlString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\") // Escape backslashes first
+    .replace(/"/g, '\\"') // Escape double quotes
+    .replace(/\n/g, "\\n") // Escape newlines
+    .replace(/\r/g, "\\r") // Escape carriage returns
+    .replace(/\t/g, "\\t"); // Escape tabs
+}
+
+/**
  * Rebuild frontmatter to string
  */
 function buildFrontmatter(frontmatter: Record<string, unknown>): string {
   const lines = ["---"];
   for (const [key, value] of Object.entries(frontmatter)) {
     if (Array.isArray(value)) {
-      lines.push(`${key}: [${value.map((v) => `"${v}"`).join(", ")}]`);
+      lines.push(`${key}: [${value.map((v) => `"${escapeYamlString(String(v))}"`).join(", ")}]`);
     } else if (typeof value === "string") {
-      lines.push(`${key}: "${value}"`);
+      lines.push(`${key}: "${escapeYamlString(value)}"`);
     } else if (value === null || value === undefined) {
       lines.push(`${key}: null`);
     } else {
