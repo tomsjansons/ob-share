@@ -145,7 +145,7 @@ async function updateFileStatus(filePath: string, newStatus: string): Promise<vo
 
     frontmatter.status = newStatus;
 
-    const newContent = buildFrontmatter(frontmatter) + "\n\n" + body;
+    const newContent = buildFrontmatter(frontmatter) + "\n\n" + body.trimStart();
     await fs.writeFile(filePath, newContent, "utf-8");
 
     logger.debug({

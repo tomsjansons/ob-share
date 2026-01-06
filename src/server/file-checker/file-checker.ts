@@ -119,7 +119,7 @@ export async function updateFileStatus(filePath: string, newStatus: string): Pro
 
     frontmatter.status = newStatus;
 
-    const newContent = buildFrontmatter(frontmatter) + "\n\n" + body;
+    const newContent = buildFrontmatter(frontmatter) + "\n\n" + body.trimStart();
     await fs.writeFile(filePath, newContent, "utf-8");
 
     logger.debug({
@@ -216,7 +216,7 @@ export async function updateFileWithError(
       );
     }
 
-    const newContent = buildFrontmatter(frontmatter) + "\n\n" + newBody;
+    const newContent = buildFrontmatter(frontmatter) + "\n\n" + newBody.trimStart();
     await fs.writeFile(filePath, newContent, "utf-8");
 
     return {

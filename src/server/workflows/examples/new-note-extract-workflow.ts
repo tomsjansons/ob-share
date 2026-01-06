@@ -106,6 +106,16 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, unknow
             // Keep as string
             value = strValue;
           }
+        } else if (strValue === "null") {
+          value = null;
+        } else if (strValue === "true") {
+          value = true;
+        } else if (strValue === "false") {
+          value = false;
+        } else if (/^-?\d+$/.test(strValue)) {
+          value = parseInt(strValue, 10);
+        } else if (/^-?\d+\.\d+$/.test(strValue)) {
+          value = parseFloat(strValue);
         } else {
           value = strValue;
         }
@@ -119,17 +129,31 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, unknow
 }
 
 /**
+ * Escape a string value for YAML double-quoted strings
+ */
+function escapeYamlString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+}
+
+/**
  * Rebuild frontmatter to string
  */
 function buildFrontmatter(frontmatter: Record<string, unknown>): string {
   const lines = ["---"];
   for (const [key, value] of Object.entries(frontmatter)) {
     if (Array.isArray(value)) {
-      lines.push(`${key}: [${value.map((v) => `"${v}"`).join(", ")}]`);
+      lines.push(`${key}: [${value.map((v) => `"${escapeYamlString(String(v))}"`).join(", ")}]`);
     } else if (typeof value === "string") {
-      lines.push(`${key}: "${value}"`);
+      lines.push(`${key}: "${escapeYamlString(value)}"`);
+    } else if (value === null || value === undefined) {
+      lines.push(`${key}: null`);
     } else {
-      lines.push(`${key}: ${value}`);
+      lines.push(`${key}: ${String(value)}`);
     }
   }
   lines.push("---");
@@ -686,11 +710,12 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
         // Build new content
         const newFrontmatter = buildFrontmatter(fileData.frontmatter);
 
-        // Wrap original content
-        let newBody = fileData.body;
+        // Wrap original content (trimStart to avoid accumulating empty lines)
+        const trimmedBody = fileData.body.trimStart();
+        let newBody = trimmedBody;
         if (formattedExtraction) {
           // Add extracted content before original
-          newBody = `${formattedExtraction}\n\n---\n\n## Original Content\n\n${fileData.body}`;
+          newBody = `${formattedExtraction}\n\n---\n\n## Original Content\n\n${trimmedBody}`;
         }
 
         const newContent = `${newFrontmatter}\n\n${newBody}`;
