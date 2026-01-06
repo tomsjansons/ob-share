@@ -106,7 +106,11 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, unknow
 
       if (typeof value === "string") {
         let strValue = value;
-        if ((strValue.startsWith('"') && strValue.endsWith('"')) || (strValue.startsWith("'") && strValue.endsWith("'"))) {
+        if (strValue.startsWith('"') && strValue.endsWith('"')) {
+          // Double-quoted string: strip quotes and unescape
+          strValue = unescapeYamlString(strValue.slice(1, -1));
+        } else if (strValue.startsWith("'") && strValue.endsWith("'")) {
+          // Single-quoted string: strip quotes (no escaping in single quotes)
           strValue = strValue.slice(1, -1);
         }
         if (strValue.startsWith("[") && strValue.endsWith("]")) {
@@ -148,6 +152,19 @@ function escapeYamlString(value: string): string {
     .replace(/\n/g, "\\n")
     .replace(/\r/g, "\\r")
     .replace(/\t/g, "\\t");
+}
+
+/**
+ * Unescape a YAML double-quoted string value
+ * Reverses the escaping done by escapeYamlString
+ */
+function unescapeYamlString(value: string): string {
+  return value
+    .replace(/\\t/g, "\t") // Unescape tabs
+    .replace(/\\r/g, "\r") // Unescape carriage returns
+    .replace(/\\n/g, "\n") // Unescape newlines
+    .replace(/\\"/g, '"') // Unescape double quotes
+    .replace(/\\\\/g, "\\"); // Unescape backslashes last
 }
 
 /**

@@ -38,10 +38,14 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
       const key = line.substring(0, colonIndex).trim();
       let value: unknown = line.substring(colonIndex + 1).trim();
 
-      // Remove quotes if present
+      // Remove quotes if present and unescape the value
       if (typeof value === "string") {
         let strValue = value;
-        if ((strValue.startsWith('"') && strValue.endsWith('"')) || (strValue.startsWith("'") && strValue.endsWith("'"))) {
+        if (strValue.startsWith('"') && strValue.endsWith('"')) {
+          // Double-quoted string: strip quotes and unescape
+          strValue = unescapeYamlString(strValue.slice(1, -1));
+        } else if (strValue.startsWith("'") && strValue.endsWith("'")) {
+          // Single-quoted string: strip quotes (no escaping in single quotes)
           strValue = strValue.slice(1, -1);
         }
         // Handle arrays
@@ -87,6 +91,32 @@ function escapeYamlString(value: string): string {
     .replace(/\n/g, "\\n") // Escape newlines
     .replace(/\r/g, "\\r") // Escape carriage returns
     .replace(/\t/g, "\\t"); // Escape tabs
+}
+
+/**
+ * Unescape a YAML double-quoted string value
+ * Reverses the escaping done by escapeYamlString
+ */
+function unescapeYamlString(value: string): string {
+  return value
+    .replace(/\\t/g, "\t") // Unescape tabs
+    .replace(/\\r/g, "\r") // Unescape carriage returns
+    .replace(/\\n/g, "\n") // Unescape newlines
+    .replace(/\\"/g, '"') // Unescape double quotes
+    .replace(/\\\\/g, "\\"); // Unescape backslashes last
+}
+
+/**
+ * Sanitize a string for safe storage in YAML frontmatter
+ * Removes newlines and other characters that could break YAML structure
+ */
+function sanitizeForFrontmatter(value: string): string {
+  return value
+    .replace(/\r\n/g, " ") // Replace Windows newlines with space
+    .replace(/\n/g, " ") // Replace Unix newlines with space
+    .replace(/\r/g, " ") // Replace carriage returns with space
+    .replace(/\s+/g, " ") // Collapse multiple whitespace into single space
+    .trim();
 }
 
 /**
@@ -168,9 +198,9 @@ export async function updateFileWithError(
     // Check if we should retry
     const shouldRetry = newRetryNum <= maxRetries;
 
-    // Update frontmatter
+    // Update frontmatter (sanitize error to remove newlines from JSON responses)
     frontmatter["retry-num"] = newRetryNum;
-    frontmatter["last-error"] = error;
+    frontmatter["last-error"] = sanitizeForFrontmatter(error);
     frontmatter["last-error-at"] = new Date().toISOString();
 
     if (shouldRetry) {
