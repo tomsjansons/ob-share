@@ -44,7 +44,7 @@ async function reverseGeocode(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
       {
         headers: {
-          "User-Agent": "ob-share/1.0 (https://ob-share.fly.dev)",
+          "User-Agent": "ob-share/1.0 (https://ob-share.up.railway.app)",
         },
       }
     );

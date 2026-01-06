@@ -8,7 +8,7 @@ This project provides a cloud-based, containerized Obsidian installation that:
 - Runs headless in Docker with a virtual display
 - Provides remote desktop access via VNC
 - Enables Obsidian Sync across all your devices
-- Deploys to Fly.io with automatic CI/CD
+- Deploys to Railway with automatic CI/CD
 - Includes a Next.js web portal with GitHub authentication
 
 ## Technology Stack
@@ -17,7 +17,7 @@ This project provides a cloud-based, containerized Obsidian installation that:
 |-----------|------------|---------|
 | Base OS | Ubuntu 22.04 | Container foundation |
 | Container | Docker & Docker Compose | Containerization |
-| Deployment | Fly.io | Cloud hosting |
+| Deployment | Railway | Cloud hosting |
 | Display | Xvfb (Virtual Framebuffer) | Headless X11 display |
 | Window Manager | Openbox | Minimal window management |
 | Remote Access | x11vnc | VNC server (port 5900) |
@@ -39,7 +39,7 @@ ob-share/
 ├── Dockerfile              # Multi-stage container image
 ├── docker-compose.yml      # Docker Compose configuration
 ├── entrypoint.sh           # Container startup script
-├── fly.toml                # Fly.io deployment config
+├── railway.toml            # Railway deployment config
 ├── supervisord.conf        # Process manager config
 ├── package.json            # Node.js dependencies
 ├── drizzle.config.ts       # Database configuration
@@ -117,7 +117,7 @@ ob-share/
 │   └── icon-512.svg        # PWA icon (512x512)
 └── .github/
     └── workflows/
-        └── fly-deploy.yml  # CI/CD workflow
+        └── railway-deploy.yml  # CI/CD workflow
 ```
 
 ## Theme Support
@@ -148,8 +148,8 @@ The theme toggle is available on all pages (landing, account, settings, and shar
 2. Click "New OAuth App"
 3. Fill in the details:
    - **Application name:** ob-share
-   - **Homepage URL:** `http://localhost:3000` (local) or `https://ob-share.fly.dev` (production)
-   - **Authorization callback URL:** `http://localhost:3000/api/auth/callback/github` (local) or `https://ob-share.fly.dev/api/auth/callback/github` (production)
+   - **Homepage URL:** `http://localhost:3000` (local) or `https://ob-share.up.railway.app` (production)
+   - **Authorization callback URL:** `http://localhost:3000/api/auth/callback/github` (local) or `https://ob-share.up.railway.app/api/auth/callback/github` (production)
 4. Copy the Client ID and generate a Client Secret
 
 ### Local Setup
@@ -235,15 +235,17 @@ pnpm dev
 | `./data` | `/data` | SQLite database |
 | `obsidian-config` (named volume) | `/home/obsidian/.config/obsidian` | Obsidian settings |
 
-#### Fly.io Deployment (Persistent Volume)
+#### Railway Deployment (Persistent Volume)
 
-On Fly.io, a persistent volume is mounted at `/data` with the following structure:
+On Railway, a persistent volume is mounted at `/data` with the following structure:
 
 | Volume Path | Purpose |
 |-------------|---------|
 | `/data/Documents` | Persistent document storage |
 | `/data/obsidian-config` | Obsidian settings and sync data |
 | `/data/ob-share.db` | SQLite database |
+
+**Note:** Railway volumes mount as root user. For non-root containers, set `RAILWAY_RUN_UID=0`.
 
 ### Port Mappings
 
@@ -260,7 +262,7 @@ The application exposes a health check endpoint at `/health` for container orche
 |----------|--------|----------|
 | `/health` | GET | `{"status": "ok"}` (200 OK) |
 
-This endpoint is used by Fly.io for health checks with a 30-second grace period to allow time for database migrations and service startup.
+This endpoint is used by Railway for health checks with a 60-second timeout to allow time for database migrations and service startup.
 
 ### Allow List
 
@@ -434,7 +436,7 @@ The container uses supervisord to manage all services with automatic restart cap
 2. Database migrations run automatically
 3. Database is seeded with initial allow list
 4. supervisord launches services in priority order
-5. Next.js starts first and serves the web portal (enables fast Fly.io health checks)
+5. Next.js starts first and serves the web portal (enables fast health checks)
 6. Xvfb creates virtual display
 7. Openbox provides window management
 8. x11vnc exposes display over VNC
@@ -442,73 +444,83 @@ The container uses supervisord to manage all services with automatic restart cap
 
 ## Deployment
 
-### Fly.io Deployment
+### Railway Deployment
 
-The project is configured for Fly.io deployment with the following specifications:
+The project is configured for Railway deployment with the following specifications:
 
 | Setting | Value |
 |---------|-------|
 | App Name | `ob-share` |
-| Region | `arn` (Dublin, Ireland) |
-| CPU | 1 shared core |
-| Memory | 1 GB |
-| Volume | 1 GB persistent storage |
-| Auto-stop | Disabled (always running) |
+| Builder | Dockerfile |
+| Health Check | `/health` (60s timeout) |
+| Restart Policy | On failure (max 3 retries) |
 
-#### Setting Secrets
+#### Setting Secrets (Manual Step)
 
-Before deploying, set the required secrets:
+Before deploying, set the required environment variables in Railway Dashboard:
 
-```bash
-flyctl secrets set BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
-flyctl secrets set GITHUB_CLIENT_ID="your-client-id"
-flyctl secrets set GITHUB_CLIENT_SECRET="your-client-secret"
-```
+1. Go to your Railway project → Service → Variables tab
+2. Add the following variables:
+   - `BETTER_AUTH_SECRET` - Generate with: `openssl rand -base64 32`
+   - `BETTER_AUTH_URL` - Set to `https://ob-share.up.railway.app` (or your custom domain)
+   - `GITHUB_CLIENT_ID` - From GitHub OAuth App
+   - `GITHUB_CLIENT_SECRET` - From GitHub OAuth App
+   - `DATABASE_URL` - Set to `/data/ob-share.db`
+   - `HOSTNAME` - Set to `0.0.0.0`
+   - `PORT` - Set to `3000`
+
+#### Creating a Volume (Manual Step)
+
+1. In Railway Dashboard, go to your project
+2. Press `⌘K` (or right-click) and select "Add Volume"
+3. Attach the volume to your service
+4. Set mount path to `/data`
 
 #### Automatic Deployment (CI/CD)
 
 Pushes to the `main` branch trigger automatic deployment via GitHub Actions.
 
 **Setup:**
-1. Create a Fly.io account and install `flyctl`
-2. Run `flyctl auth token` to get your API token
-3. Add `FLY_API_TOKEN` as a secret in your GitHub repository settings
-4. Push to `main` to trigger deployment
+1. Create a Railway account at [railway.app](https://railway.app)
+2. Create a new project and note your project ID
+3. Go to Account Settings → Tokens → Create Token
+4. Add `RAILWAY_TOKEN` as a secret in your GitHub repository settings
+5. Push to `main` to trigger deployment
 
 #### Manual Deployment
 
-1. **Install Fly CLI:**
+1. **Install Railway CLI:**
    ```bash
-   curl -L https://fly.io/install.sh | sh
+   npm install -g @railway/cli
    ```
 
 2. **Authenticate:**
    ```bash
-   flyctl auth login
+   railway login
    ```
 
-3. **Create the persistent volume (first time only):**
+3. **Link to your project:**
    ```bash
-   flyctl volumes create obsidian_data --region arn --size 1
+   railway link
    ```
 
 4. **Deploy the application:**
    ```bash
-   flyctl deploy --remote-only --ha=false
+   railway up
    ```
 
 #### Connecting via VNC
 
-Since VNC (port 5900) is not exposed publicly, use `fly proxy` to create a secure tunnel:
+VNC (port 5900) needs to be exposed via Railway's TCP Proxy:
 
-1. **Start the proxy:**
-   ```bash
-   fly proxy 5900:5900 -a ob-share
-   ```
+1. **Enable TCP Proxy in Railway:**
+   - Go to Service Settings → Networking
+   - Add a TCP Proxy for port 5900
+   - Note the provided public URL and port
 
 2. **Connect with your VNC client:**
    - Open your VNC viewer (TigerVNC, RealVNC, etc.)
-   - Connect to `localhost:5900`
+   - Connect to the Railway TCP proxy URL and port
    - Enter the VNC password (default: `obsidian`)
 
 3. **Set up Obsidian (first time):**
@@ -636,11 +648,12 @@ The PWA is configured in:
 - **Resolution problems:** Adjust `SCREEN_RESOLUTION` in `.env`
 - **Format:** `WIDTHxHEIGHTxCOLOR_DEPTH` (e.g., `1920x1080x24`)
 
-### Fly.io Deployment Issues
+### Railway Deployment Issues
 
-- **502 errors / "App not listening":** The app has a 30-second grace period for startup. If you still see this error, check logs with `fly logs -a ob-share`
+- **502 errors / "App not listening":** The app has a 60-second health check timeout. If you still see this error, check logs in Railway Dashboard → Service → Logs
 - **Health check failures:** Verify the `/health` endpoint is accessible and returning 200
-- **HOSTNAME override:** Fly.io overrides the `HOSTNAME` environment variable with the machine ID. The `fly.toml` explicitly sets `HOSTNAME = "0.0.0.0"` to ensure Next.js binds to all interfaces
+- **Volume not mounting:** Ensure volume is attached to the service and mount path is set to `/data`. Volumes only mount at runtime, not during build
+- **Permission issues with volume:** Railway volumes mount as root. Set `RAILWAY_RUN_UID=0` if needed
 
 ### Container Logs
 
@@ -924,10 +937,10 @@ ToolRegistry.register(myTool);
 ## Security Considerations
 
 - **VNC Password:** Change the default password in production
-- **Network Exposure:** VNC is not exposed publicly on Fly.io
+- **Network Exposure:** VNC requires TCP Proxy setup in Railway to access externally
 - **Authentication:** GitHub OAuth with allow list restricts access
 - **Secrets:** Never commit `.env` files or secrets to version control
-- **HTTPS:** Enforced automatically on Fly.io
+- **HTTPS:** Enforced automatically on Railway
 - **Container Security:** Runs with `seccomp:unconfined` for Obsidian compatibility
 
 ## Use Cases

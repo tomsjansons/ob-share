@@ -4,7 +4,7 @@ set -e
 echo "[ENTRYPOINT] Starting entrypoint script..."
 echo "[ENTRYPOINT] Checking /data mount status..."
 
-# Set up persistent volume (Fly.io)
+# Set up persistent volume (Railway)
 # When /data is a mounted volume, set up directory structure and symlinks
 if mountpoint -q /data 2>/dev/null; then
     echo "[ENTRYPOINT] /data IS a mountpoint - setting up persistent storage..."
