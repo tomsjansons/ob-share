@@ -7,8 +7,10 @@
  */
 
 import { promises as fs } from "fs";
+import { createReadStream } from "fs";
 import path from "path";
 import { logger as baseLogger } from "@/lib/logger";
+import OpenAI from "openai";
 
 const logger = baseLogger.child({ module: "openai-client" });
 
@@ -110,6 +112,7 @@ export class OpenAIClient {
 
   /**
    * Transcribe audio file using Whisper API
+   * Uses the official OpenAI SDK with fs.createReadStream for proper file upload
    */
   async transcribe(
     filePath: string,
@@ -124,56 +127,55 @@ export class OpenAIClient {
     });
 
     try {
-      // Read the audio file
-      const audioBuffer = await fs.readFile(filePath);
-      const fileName = path.basename(filePath);
-
-      // Create form data
-      const formData = new FormData();
-      const blob = new Blob([audioBuffer], { type: this.getMimeType(filePath) });
-      formData.append("file", blob, fileName);
-      formData.append("model", model);
-
-      if (options?.language) {
-        formData.append("language", options.language);
-      }
-      if (options?.prompt) {
-        formData.append("prompt", options.prompt);
-      }
-      formData.append("response_format", options?.responseFormat ?? "verbose_json");
-      if (options?.temperature !== undefined) {
-        formData.append("temperature", options.temperature.toString());
-      }
-
-      // Make API request
-      const response = await fetch(`${this.config.baseUrl}/audio/transcriptions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: formData,
-        signal: AbortSignal.timeout(this.config.timeout),
+      // Create official OpenAI client
+      const openai = new OpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseUrl,
+        timeout: this.config.timeout,
       });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
+      // Use the official SDK with fs.createReadStream (the recommended approach)
+      const transcriptionOptions: OpenAI.Audio.TranscriptionCreateParams = {
+        file: createReadStream(filePath),
+        model,
+        response_format: options?.responseFormat ?? "verbose_json",
+      };
+
+      if (options?.language) {
+        transcriptionOptions.language = options.language;
+      }
+      if (options?.prompt) {
+        transcriptionOptions.prompt = options.prompt;
+      }
+      if (options?.temperature !== undefined) {
+        transcriptionOptions.temperature = options.temperature;
       }
 
-      const data = await response.json();
+      const data = await openai.audio.transcriptions.create(transcriptionOptions);
+
+      // Handle different response formats
+      // For verbose_json, we get an object with text, language, duration, segments
+      // For text, we get just a string
+      // Cast to record to access verbose_json fields that aren't in the basic type
+      const verboseData = data as unknown as {
+        text: string;
+        language?: string;
+        duration?: number;
+        segments?: Array<{ id: number; start: number; end: number; text: string }>;
+      };
 
       logger.info({
         event: "openai.transcribe.complete",
-        language: data.language,
-        duration: data.duration,
-        textLength: data.text?.length,
+        language: verboseData.language,
+        duration: verboseData.duration,
+        textLength: verboseData.text?.length,
       });
 
       return {
-        text: data.text || "",
-        language: data.language,
-        duration: data.duration,
-        segments: data.segments?.map((s: { id: number; start: number; end: number; text: string }) => ({
+        text: verboseData.text || "",
+        language: verboseData.language,
+        duration: verboseData.duration,
+        segments: verboseData.segments?.map((s) => ({
           id: s.id,
           start: s.start,
           end: s.end,
