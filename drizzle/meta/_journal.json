@@ -50,6 +50,13 @@
       "when": 1767650114993,
       "tag": "0006_parallel_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1767700000000,
+      "tag": "0007_periodic_job_schedules",
+      "breakpoints": true
     }
   ]
 }

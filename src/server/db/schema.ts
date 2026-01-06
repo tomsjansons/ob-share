@@ -220,3 +220,37 @@ export const queueLock = sqliteTable("queue_lock", {
   acquiredAt: integer("acquired_at", { mode: "timestamp" }).notNull(),
   expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
 });
+
+// ============================================================================
+// Periodic Job Schedules
+// ============================================================================
+
+/**
+ * Periodic job schedules - defines jobs that run at regular intervals
+ * Each schedule tracks when the job last ran and when it should run next
+ */
+export const periodicJobSchedules = sqliteTable("periodic_job_schedules", {
+  id: text("id").primaryKey(), // Unique identifier for this schedule (e.g., "file-checker")
+  jobType: text("job_type").notNull(), // The job type to create
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+
+  // Interval configuration (in milliseconds)
+  intervalMs: integer("interval_ms").notNull(),
+
+  // Payload template (JSON) - merged with dynamic data when creating jobs
+  payloadTemplate: text("payload_template"),
+
+  // Tracking
+  lastRunAt: integer("last_run_at", { mode: "timestamp" }),
+  nextRunAt: integer("next_run_at", { mode: "timestamp" }),
+  lastJobId: text("last_job_id"), // ID of the last job created
+
+  // Statistics
+  totalRuns: integer("total_runs").notNull().default(0),
+  successfulRuns: integer("successful_runs").notNull().default(0),
+  failedRuns: integer("failed_runs").notNull().default(0),
+
+  // Audit fields
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});

@@ -2,8 +2,15 @@
  * Next.js Instrumentation
  *
  * This file runs once when the Next.js server starts.
- * Used for initializing background services like the job scheduler
- * and file checker.
+ * Used for initializing background services like the job scheduler.
+ *
+ * The job scheduler handles:
+ * - Regular job queue processing
+ * - Periodic jobs (like file checking) via the periodic job system
+ *
+ * IMPORTANT: We defer the initial run of the scheduler to avoid
+ * blocking the event loop during startup. better-sqlite3 is synchronous
+ * and can block the event loop during database operations.
  */
 
 export async function register() {
@@ -38,7 +45,23 @@ export async function register() {
         elapsedMs: getElapsedMs(),
       }, "Workflow system initialized");
 
+      // Register the file checker job
+      startupLogger.info({
+        event: "instrumentation.file-checker-job.registering",
+        elapsedMs: getElapsedMs(),
+      }, "Registering file checker job");
+
+      const { JobRegistry } = await import("@/server/jobs");
+      const { fileCheckerJob, FILE_CHECKER_SCHEDULE_ID, DEFAULT_FILE_CHECK_INTERVAL_MS } = await import("@/server/jobs/file-checker-job");
+      JobRegistry.register(fileCheckerJob);
+
+      startupLogger.info({
+        event: "instrumentation.file-checker-job.registered",
+        elapsedMs: getElapsedMs(),
+      }, "File checker job registered");
+
       // Start job queue scheduler
+      // Runs every 10 seconds to support periodic jobs like file checking
       startupLogger.info({
         event: "instrumentation.scheduler.starting",
         elapsedMs: getElapsedMs(),
@@ -46,8 +69,8 @@ export async function register() {
 
       const { getGlobalScheduler } = await import("@/server/jobs/scheduler");
       const scheduler = getGlobalScheduler({
-        intervalMs: 60 * 1000, // Check every 60 seconds
-        runOnStart: true,
+        intervalMs: 10 * 1000, // Run every 10 seconds to support periodic jobs
+        runOnStart: false, // Don't run immediately - defer to avoid blocking
       });
       scheduler.start();
 
@@ -56,23 +79,51 @@ export async function register() {
         elapsedMs: getElapsedMs(),
       }, "Job queue scheduler started");
 
-      // Start file checker
-      startupLogger.info({
-        event: "instrumentation.file-checker.starting",
-        elapsedMs: getElapsedMs(),
-      }, "Starting file checker");
+      // Defer the initial setup using setImmediate to allow the HTTP server to start first
+      // This ensures the event loop is free to handle HTTP requests during startup
+      setImmediate(async () => {
+        try {
+          // Register the file checker periodic schedule
+          startupLogger.info({
+            event: "instrumentation.periodic.registering",
+            elapsedMs: getElapsedMs(),
+          }, "Registering periodic file checker schedule");
 
-      const { getGlobalFileChecker } = await import("@/server/file-checker");
-      const fileChecker = getGlobalFileChecker({
-        intervalMs: 10 * 1000, // Check every 10 seconds for new files (configurable via settings)
-        runOnStart: true,
+          const { registerPeriodicJob } = await import("@/server/jobs");
+          await registerPeriodicJob({
+            id: FILE_CHECKER_SCHEDULE_ID,
+            jobType: "file-checker",
+            intervalMs: DEFAULT_FILE_CHECK_INTERVAL_MS, // 10 seconds
+          });
+
+          startupLogger.info({
+            event: "instrumentation.periodic.registered",
+            scheduleId: FILE_CHECKER_SCHEDULE_ID,
+            intervalMs: DEFAULT_FILE_CHECK_INTERVAL_MS,
+            elapsedMs: getElapsedMs(),
+          }, "Periodic file checker schedule registered");
+
+          // Run initial scheduler processing
+          startupLogger.info({
+            event: "instrumentation.deferred.scheduler",
+            elapsedMs: getElapsedMs(),
+          }, "Running deferred scheduler processing");
+
+          const result = await scheduler.triggerProcessing();
+
+          startupLogger.info({
+            event: "instrumentation.deferred.scheduler.complete",
+            elapsedMs: getElapsedMs(),
+            jobsProcessed: result.jobsProcessed,
+            periodicJobsCreated: result.periodicJobsCreated,
+          }, "Deferred scheduler processing complete");
+        } catch (err) {
+          startupLogger.error({
+            event: "instrumentation.deferred.error",
+            error: err instanceof Error ? err.message : String(err),
+          }, "Error during deferred initialization");
+        }
       });
-      fileChecker.start();
-
-      startupLogger.info({
-        event: "instrumentation.file-checker.started",
-        elapsedMs: getElapsedMs(),
-      }, "File checker started");
 
     } catch (err) {
       startupLogger.error({
