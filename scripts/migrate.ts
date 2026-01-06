@@ -40,14 +40,35 @@ async function runMigrations() {
   // Create drizzle instance
   const db = drizzle(sqlite);
 
+  // Check existing tables before migration
+  log("info", "Checking existing tables in database");
+  const tables = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as Array<{name: string}>;
+  log("info", "Existing tables", { tables: tables.map(t => t.name) });
+
+  // Check drizzle migrations journal
+  const hasJournal = tables.some(t => t.name === '__drizzle_migrations');
+  if (hasJournal) {
+    const journal = sqlite.prepare("SELECT * FROM __drizzle_migrations").all();
+    log("info", "Drizzle migrations journal", { entries: journal.length, journal });
+  } else {
+    log("info", "No drizzle migrations journal found - fresh database");
+  }
+
   // Run drizzle migrations
   log("info", "Running drizzle migrations");
   try {
     migrate(db, { migrationsFolder });
     log("info", "Drizzle migrations completed successfully");
   } catch (error) {
-    if (error instanceof Error && error.message.includes("already been applied")) {
-      log("info", "All migrations already applied");
+    if (error instanceof Error) {
+      if (error.message.includes("already been applied")) {
+        log("info", "All migrations already applied");
+      } else if (error.message.includes("already exists")) {
+        // Table exists but migration not recorded - try to continue
+        log("info", "Table already exists - database may be partially migrated, continuing...");
+      } else {
+        throw error;
+      }
     } else {
       throw error;
     }
