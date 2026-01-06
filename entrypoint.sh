@@ -1,10 +1,13 @@
 #!/bin/bash
 set -e
 
+echo "[ENTRYPOINT] Starting entrypoint script..."
+echo "[ENTRYPOINT] Checking /data mount status..."
+
 # Set up persistent volume (Fly.io)
 # When /data is a mounted volume, set up directory structure and symlinks
 if mountpoint -q /data 2>/dev/null; then
-    echo "Fly.io volume detected at /data, setting up persistent storage..."
+    echo "[ENTRYPOINT] /data IS a mountpoint - setting up persistent storage..."
 
     # Create subdirectories in the volume
     mkdir -p /data/Documents
@@ -39,7 +42,12 @@ if mountpoint -q /data 2>/dev/null; then
 
     chown -h obsidian:obsidian /home/obsidian/Documents
     chown -h obsidian:obsidian /home/obsidian/.config/obsidian
+else
+    echo "[ENTRYPOINT] /data is NOT a mountpoint - volume may not be attached!"
+    ls -la /data 2>&1 || echo "[ENTRYPOINT] /data does not exist"
 fi
+
+echo "[ENTRYPOINT] Volume setup complete, setting up VNC..."
 
 # Set up VNC password
 if [ ! -f /home/obsidian/.vnc/passwd ]; then
@@ -65,8 +73,11 @@ SCREEN_DEPTH=$(echo $SCREEN_RESOLUTION | cut -d'x' -f3)
 export SCREEN_WIDTH SCREEN_HEIGHT SCREEN_DEPTH
 
 # Run database migrations and seeding before starting services
+echo "[ENTRYPOINT] Starting database migrations..."
 echo "[MIGRATION] Running database migrations and seeding..."
 cd /app
+echo "[MIGRATION] Working directory: $(pwd)"
+echo "[MIGRATION] Node version: $(node --version)"
 
 # Run migrations using the TypeScript migration script via tsx
 npx tsx scripts/migrate.ts 2>&1 || {
@@ -82,4 +93,5 @@ echo "VNC available at port 5900"
 echo "Screen resolution: ${SCREEN_WIDTH}x${SCREEN_HEIGHT}x${SCREEN_DEPTH}"
 
 # Start supervisord to manage all processes
+echo "[ENTRYPOINT] Starting supervisord..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
