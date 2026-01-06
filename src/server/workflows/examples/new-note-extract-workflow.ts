@@ -621,7 +621,18 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
           content: string;
           frontmatter: Record<string, unknown>;
           body: string;
-        };
+        } | undefined;
+
+        // Check if fileData is available
+        if (!fileData || !fileData.frontmatter) {
+          logger.error({
+            event: "workflow.update_file.no_file_data",
+            filePath: trigger.filePath,
+            hasFileData: !!fileData,
+            hasFrontmatter: !!(fileData?.frontmatter),
+          });
+          throw new Error("File data not available from read-file step");
+        }
 
         let extractedContent: unknown;
         let formattedExtraction = "";

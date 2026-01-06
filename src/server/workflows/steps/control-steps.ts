@@ -88,8 +88,8 @@ export class TransformStep extends BaseStep<TransformStepConfig> {
         "Starting transform"
       );
 
-      // Execute the transform function
-      const output = this.config.transform(workflowContext);
+      // Execute the transform function (await in case it's async)
+      const output = await this.config.transform(workflowContext);
 
       logger.debug(
         {

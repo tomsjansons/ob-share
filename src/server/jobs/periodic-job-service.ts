@@ -20,6 +20,14 @@ import type { JobPriority } from "./types";
 const logger = baseLogger.child({ module: "periodic-job-service" });
 
 /**
+ * Yield to the event loop to allow HTTP requests to be processed.
+ * This is necessary because better-sqlite3 is synchronous and blocks the event loop.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
  * Configuration for registering a periodic job schedule
  */
 export interface PeriodicJobConfig {
@@ -215,6 +223,9 @@ export async function processDueSchedules(): Promise<{
   const errors: Array<{ scheduleId: string; error: string }> = [];
 
   for (const schedule of dueSchedules) {
+    // Yield to event loop between processing each schedule
+    await yieldToEventLoop();
+
     try {
       // Verify the job type exists
       const definition = JobRegistry.get(schedule.jobType);
