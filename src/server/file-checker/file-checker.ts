@@ -52,6 +52,18 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
             // Keep as string if parsing fails
             value = strValue;
           }
+        } else if (strValue === "null") {
+          value = null;
+        } else if (strValue === "true") {
+          value = true;
+        } else if (strValue === "false") {
+          value = false;
+        } else if (/^-?\d+$/.test(strValue)) {
+          // Parse integers
+          value = parseInt(strValue, 10);
+        } else if (/^-?\d+\.\d+$/.test(strValue)) {
+          // Parse floats
+          value = parseFloat(strValue);
         } else {
           value = strValue;
         }
@@ -65,15 +77,28 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
 }
 
 /**
+ * Escape a string value for YAML double-quoted strings
+ * Escapes backslashes first, then double quotes
+ */
+function escapeYamlString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\") // Escape backslashes first
+    .replace(/"/g, '\\"') // Escape double quotes
+    .replace(/\n/g, "\\n") // Escape newlines
+    .replace(/\r/g, "\\r") // Escape carriage returns
+    .replace(/\t/g, "\\t"); // Escape tabs
+}
+
+/**
  * Rebuild frontmatter to string
  */
 export function buildFrontmatter(frontmatter: Record<string, unknown>): string {
   const lines = ["---"];
   for (const [key, value] of Object.entries(frontmatter)) {
     if (Array.isArray(value)) {
-      lines.push(`${key}: [${value.map((v) => `"${v}"`).join(", ")}]`);
+      lines.push(`${key}: [${value.map((v) => `"${escapeYamlString(String(v))}"`).join(", ")}]`);
     } else if (typeof value === "string") {
-      lines.push(`${key}: "${value}"`);
+      lines.push(`${key}: "${escapeYamlString(value)}"`);
     } else if (value === null || value === undefined) {
       lines.push(`${key}: null`);
     } else {
@@ -94,7 +119,7 @@ export async function updateFileStatus(filePath: string, newStatus: string): Pro
 
     frontmatter.status = newStatus;
 
-    const newContent = buildFrontmatter(frontmatter) + "\n\n" + body;
+    const newContent = buildFrontmatter(frontmatter) + "\n\n" + body.trimStart();
     await fs.writeFile(filePath, newContent, "utf-8");
 
     logger.debug({
@@ -191,7 +216,7 @@ export async function updateFileWithError(
       );
     }
 
-    const newContent = buildFrontmatter(frontmatter) + "\n\n" + newBody;
+    const newContent = buildFrontmatter(frontmatter) + "\n\n" + newBody.trimStart();
     await fs.writeFile(filePath, newContent, "utf-8");
 
     return {

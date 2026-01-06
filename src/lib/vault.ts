@@ -74,6 +74,18 @@ function getTimestamp(): string {
 }
 
 /**
+ * Escape a string value for YAML double-quoted strings
+ */
+function escapeYamlString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\") // Escape backslashes first
+    .replace(/"/g, '\\"') // Escape double quotes
+    .replace(/\n/g, "\\n") // Escape newlines
+    .replace(/\r/g, "\\r") // Escape carriage returns
+    .replace(/\t/g, "\\t"); // Escape tabs
+}
+
+/**
  * Formats location info for frontmatter
  */
 function formatLocation(location?: LocationInfo): string {
@@ -104,11 +116,11 @@ function generateFrontmatter(options: {
 
   const lines = [
     "---",
-    `location: "${formatLocation(location)}"`,
+    `location: "${escapeYamlString(formatLocation(location))}"`,
     `created: ${created.toISOString()}`,
     `status: "new"`,
-    `tags: [${tags.map(t => `"${t}"`).join(", ")}]`,
-    `projects: [${projects.map(p => `"${p}"`).join(", ")}]`,
+    `tags: [${tags.map(t => `"${escapeYamlString(t)}"`).join(", ")}]`,
+    `projects: [${projects.map(p => `"${escapeYamlString(p)}"`).join(", ")}]`,
     "---",
     "",
   ];
