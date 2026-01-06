@@ -38,10 +38,14 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
       const key = line.substring(0, colonIndex).trim();
       let value: unknown = line.substring(colonIndex + 1).trim();
 
-      // Remove quotes if present
+      // Remove quotes if present and unescape the value
       if (typeof value === "string") {
         let strValue = value;
-        if ((strValue.startsWith('"') && strValue.endsWith('"')) || (strValue.startsWith("'") && strValue.endsWith("'"))) {
+        if (strValue.startsWith('"') && strValue.endsWith('"')) {
+          // Double-quoted string: strip quotes and unescape
+          strValue = unescapeYamlString(strValue.slice(1, -1));
+        } else if (strValue.startsWith("'") && strValue.endsWith("'")) {
+          // Single-quoted string: strip quotes (no escaping in single quotes)
           strValue = strValue.slice(1, -1);
         }
         // Handle arrays
@@ -87,6 +91,19 @@ function escapeYamlString(value: string): string {
     .replace(/\n/g, "\\n") // Escape newlines
     .replace(/\r/g, "\\r") // Escape carriage returns
     .replace(/\t/g, "\\t"); // Escape tabs
+}
+
+/**
+ * Unescape a YAML double-quoted string value
+ * Reverses the escaping done by escapeYamlString
+ */
+function unescapeYamlString(value: string): string {
+  return value
+    .replace(/\\t/g, "\t") // Unescape tabs
+    .replace(/\\r/g, "\r") // Unescape carriage returns
+    .replace(/\\n/g, "\n") // Unescape newlines
+    .replace(/\\"/g, '"') // Unescape double quotes
+    .replace(/\\\\/g, "\\"); // Unescape backslashes last
 }
 
 /**
