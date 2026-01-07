@@ -231,7 +231,7 @@ export class TaskRunner {
       jobType: context.job.type,
       phaseId: phaseRecord.id,
       phaseName: phaseRecord.name,
-      phaseOrder: phaseRecord.order,
+      phaseOrder: phaseRecord.phaseOrder,
       retryCount: phaseRecord.retryCount,
     }, "Phase started");
 
@@ -309,7 +309,7 @@ export class TaskRunner {
       phase: {
         id: phase.id,
         name: phase.name,
-        order: phase.order,
+        phaseOrder: phase.phaseOrder,
         input,
         retryCount: phase.retryCount,
       },
@@ -447,7 +447,7 @@ export async function runPhaseManually(
     phase: {
       id: phase.id,
       name: phase.name,
-      order: phase.order,
+      phaseOrder: phase.phaseOrder,
       input,
       retryCount: phase.retryCount,
     },

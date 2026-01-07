@@ -84,7 +84,7 @@ export async function getJobPhases(jobId: string): Promise<PhaseRecord[]> {
     .select()
     .from(jobPhases)
     .where(eq(jobPhases.jobId, jobId))
-    .orderBy(asc(jobPhases.order));
+    .orderBy(asc(jobPhases.phaseOrder));
 
   return phases as PhaseRecord[];
 }

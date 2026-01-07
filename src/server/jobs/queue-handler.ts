@@ -387,7 +387,7 @@ export class QueueHandler {
         .select()
         .from(jobPhases)
         .where(eq(jobPhases.jobId, job.id))
-        .orderBy(asc(jobPhases.order));
+        .orderBy(asc(jobPhases.phaseOrder));
 
       // If no phases exist, create them from the job definition
       if (phases.length === 0) {
@@ -401,7 +401,7 @@ export class QueueHandler {
           id: randomUUID(),
           jobId: job.id,
           name: phase.name,
-          order: index,
+          phaseOrder: index,
           status: "pending" as const,
           input: null,
           output: null,

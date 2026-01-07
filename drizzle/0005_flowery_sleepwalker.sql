@@ -1,1 +1,0 @@
-ALTER TABLE `user_settings` ADD `file_check_interval` integer DEFAULT 10 NOT NULL;
