@@ -267,6 +267,12 @@ async function scanIncomingFolder(
         const isRetryReady = isReadyForRetry(frontmatter);
 
         if (!isNew && !isRetryReady) {
+          logger.debug({
+            event: "file-checker-job.file_skipped",
+            filePath,
+            status: frontmatter.status,
+            reason: frontmatter.status ? `status is '${frontmatter.status}', not 'new'` : "no status in frontmatter",
+          });
           continue;
         }
 
@@ -382,6 +388,15 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
             userCount: allSettings.length,
           });
 
+          // Log if no users have configured vaults
+          const configuredUsers = allSettings.filter(s => s.vaultName && s.incomingFolder);
+          if (configuredUsers.length === 0 && allSettings.length > 0) {
+            logger.info({
+              event: "file-checker-job.scan.no_configured_vaults",
+              totalUsers: allSettings.length,
+            }, "No users have configured vault/incoming folder");
+          }
+
           for (const settings of allSettings) {
             if (!settings.vaultName || !settings.incomingFolder) {
               continue;
@@ -394,10 +409,21 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
               await fs.access(incomingPath);
             } catch {
               // Folder doesn't exist, skip this user
+              logger.info({
+                event: "file-checker-job.scan.folder_not_found",
+                userId: settings.userId,
+                incomingPath,
+              }, "Incoming folder does not exist");
               continue;
             }
 
             result.vaultsChecked++;
+
+            logger.debug({
+              event: "file-checker-job.scan.vault_start",
+              userId: settings.userId,
+              incomingPath,
+            });
 
             const scanResult = await scanIncomingFolder(incomingPath, {
               userId: settings.userId,
