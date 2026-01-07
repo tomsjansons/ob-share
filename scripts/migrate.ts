@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { config } from "dotenv";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import path from "path";
@@ -7,6 +8,15 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load environment variables from .env file
+const envPath = path.resolve(__dirname, "../.env");
+if (fs.existsSync(envPath)) {
+  config({ path: envPath });
+  console.log(`[MIGRATION] Loaded environment variables from ${envPath}`);
+} else {
+  console.log(`[MIGRATION] No .env file found at ${envPath}, using existing environment variables`);
+}
 
 // Simple logging for migration script
 function log(level: "info" | "error", message: string, data?: Record<string, unknown>) {
@@ -90,18 +100,27 @@ async function runMigrations() {
 }
 
 async function runSeeding(sqlite: Database.Database) {
-  // Seed allow_list with initial users
-  const initialAllowList = ["tomsjansons"];
+  // Seed allow_list with initial users from environment variable
+  // Format: comma-separated GitHub usernames (e.g., "user1,user2,user3")
+  const allowListEnv = process.env.ALLOW_LIST_USERS || "";
+  const initialAllowList = allowListEnv
+    .split(",")
+    .map((username) => username.trim())
+    .filter((username) => username.length > 0);
 
-  log("info", "Seeding allow_list table");
-  const insertStmt = sqlite.prepare(
-    "INSERT OR IGNORE INTO allow_list (github_username, created_at) VALUES (?, ?)"
-  );
+  if (initialAllowList.length === 0) {
+    log("info", "No users specified in ALLOW_LIST_USERS environment variable, skipping allow_list seeding");
+  } else {
+    log("info", "Seeding allow_list table", { users: initialAllowList });
+    const insertStmt = sqlite.prepare(
+      "INSERT OR IGNORE INTO allow_list (github_username, created_at) VALUES (?, ?)"
+    );
 
-  for (const username of initialAllowList) {
-    // Use seconds (Unix timestamp) to match Drizzle's timestamp mode
-    insertStmt.run(username, Math.floor(Date.now() / 1000));
-    log("info", "Added user to allow list", { username });
+    for (const username of initialAllowList) {
+      // Use seconds (Unix timestamp) to match Drizzle's timestamp mode
+      insertStmt.run(username, Math.floor(Date.now() / 1000));
+      log("info", "Added user to allow list", { username });
+    }
   }
 
   // Create settings records for existing users who don't have them

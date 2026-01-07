@@ -221,6 +221,7 @@ pnpm dev
 | `GITHUB_CLIENT_ID` | (required) | GitHub OAuth client ID |
 | `GITHUB_CLIENT_SECRET` | (required) | GitHub OAuth client secret |
 | `LOG_LEVEL` | `debug` (dev) / `info` (prod) | Logging level (trace, debug, info, warn, error, fatal) |
+| `ALLOW_LIST_USERS` | (empty) | Comma-separated GitHub usernames for allow list seeding |
 
 **Note:** Vault path configuration has moved to in-app settings. See [Vault Settings](#vault-settings) below.
 
@@ -265,10 +266,17 @@ This endpoint is used by Railway for health checks with a 60-second timeout to a
 
 ### Allow List
 
-The application uses a GitHub username allow list to restrict access. Initial users are seeded in the database during container startup. Currently, the allow list contains:
-- `tomsjansons`
+The application uses a GitHub username allow list to restrict access. Initial users are seeded in the database during container startup from the `ALLOW_LIST_USERS` environment variable.
 
-To add more users, you can directly insert into the `allow_list` table in the SQLite database.
+**Configuration:**
+```bash
+# Set in .env or Railway environment variables
+ALLOW_LIST_USERS=user1,user2,user3
+```
+
+**Format:** Comma-separated list of GitHub usernames (spaces around commas are trimmed).
+
+**Note:** If `ALLOW_LIST_USERS` is not set or empty, no users will be seeded to the allow list. You can also directly insert into the `allow_list` table in the SQLite database.
 
 ### Vault Settings
 
