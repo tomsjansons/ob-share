@@ -64,7 +64,7 @@ export interface PhaseRecord {
   id: string;
   jobId: string;
   name: string;
-  order: number;
+  phaseOrder: number;
   status: PhaseStatus;
   input: string | null;
   output: string | null;
@@ -94,7 +94,7 @@ export interface PhaseContext<TPayload = unknown, TPhaseInput = unknown> {
   phase: {
     id: string;
     name: string;
-    order: number;
+    phaseOrder: number;
     input: TPhaseInput | null;
     retryCount: number;
   };

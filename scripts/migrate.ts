@@ -99,7 +99,8 @@ async function runSeeding(sqlite: Database.Database) {
   );
 
   for (const username of initialAllowList) {
-    insertStmt.run(username, Date.now());
+    // Use seconds (Unix timestamp) to match Drizzle's timestamp mode
+    insertStmt.run(username, Math.floor(Date.now() / 1000));
     log("info", "Added user to allow list", { username });
   }
 
@@ -120,7 +121,8 @@ async function runSeeding(sqlite: Database.Database) {
     );
 
     for (const user of usersWithoutSettings) {
-      const now = Date.now();
+      // Use seconds (Unix timestamp) to match Drizzle's timestamp mode
+      const now = Math.floor(Date.now() / 1000);
       insertSettingsStmt.run(user.id, now, now);
       log("info", "Created settings for user", { email: user.email });
     }

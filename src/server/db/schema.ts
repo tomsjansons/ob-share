@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // Better Auth required tables
 export const user = sqliteTable("user", {
@@ -21,8 +21,10 @@ export const session = sqliteTable("session", {
   userAgent: text("user_agent"),
   userId: text("user_id")
     .notNull()
-    .references(() => user.id),
-});
+    .references(() => user.id, { onDelete: "cascade" }),
+}, (table) => [
+  index("session_user_id_idx").on(table.userId),
+]);
 
 export const account = sqliteTable("account", {
   id: text("id").primaryKey(),
@@ -30,7 +32,7 @@ export const account = sqliteTable("account", {
   providerId: text("provider_id").notNull(),
   userId: text("user_id")
     .notNull()
-    .references(() => user.id),
+    .references(() => user.id, { onDelete: "cascade" }),
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
   idToken: text("id_token"),
@@ -40,7 +42,9 @@ export const account = sqliteTable("account", {
   password: text("password"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => [
+  index("account_user_id_idx").on(table.userId),
+]);
 
 export const verification = sqliteTable("verification", {
   id: text("id").primaryKey(),
@@ -87,7 +91,7 @@ export const userSettings = sqliteTable("user_settings", {
   userId: text("user_id")
     .notNull()
     .unique()
-    .references(() => user.id),
+    .references(() => user.id, { onDelete: "cascade" }),
   vaultName: text("vault_name"),
   incomingFolder: text("incoming_folder"),
   locationPermission: text("location_permission")
@@ -168,12 +172,21 @@ export const jobs = sqliteTable("jobs", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 
-  // Optional user association
-  userId: text("user_id").references(() => user.id),
+  // Optional user association - set to null if user is deleted
+  userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
 
   // Handler tracking - which handler instance is processing this job
   handlerId: text("handler_id"),
-});
+}, (table) => [
+  index("jobs_status_idx").on(table.status),
+  index("jobs_type_idx").on(table.type),
+  index("jobs_user_id_idx").on(table.userId),
+  index("jobs_visible_at_idx").on(table.visibleAt),
+  index("jobs_scheduled_for_idx").on(table.scheduledFor),
+  index("jobs_handler_id_idx").on(table.handlerId),
+  // Composite index for the most common query: find pending jobs ready to process
+  index("jobs_status_visible_scheduled_idx").on(table.status, table.visibleAt, table.scheduledFor),
+]);
 
 // Job phases table - tracks individual idempotent phases within a job
 export const jobPhases = sqliteTable("job_phases", {
@@ -182,7 +195,7 @@ export const jobPhases = sqliteTable("job_phases", {
     .notNull()
     .references(() => jobs.id, { onDelete: "cascade" }),
   name: text("name").notNull(), // Phase identifier
-  order: integer("order").notNull(), // Execution order
+  phaseOrder: integer("phase_order").notNull(), // Execution order (renamed from 'order' to avoid reserved word)
   status: text("status").$type<PhaseStatus>().notNull().default("pending"),
 
   // Phase-specific data
@@ -201,7 +214,12 @@ export const jobPhases = sqliteTable("job_phases", {
   // Audit fields
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => [
+  index("job_phases_job_id_idx").on(table.jobId),
+  index("job_phases_status_idx").on(table.status),
+  // Composite index for ordering phases within a job
+  index("job_phases_job_order_idx").on(table.jobId, table.phaseOrder),
+]);
 
 // Queue handler heartbeat table - tracks handler health
 export const queueHandlerHeartbeat = sqliteTable("queue_handler_heartbeat", {
@@ -224,7 +242,9 @@ export const queueHandlerHeartbeat = sqliteTable("queue_handler_heartbeat", {
 
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => [
+  index("queue_handler_heartbeat_status_idx").on(table.status),
+]);
 
 // Queue processing lock - ensures only one handler processes the queue at a time
 export const queueLock = sqliteTable("queue_lock", {
@@ -244,7 +264,7 @@ export const queueLock = sqliteTable("queue_lock", {
  */
 export const periodicJobSchedules = sqliteTable("periodic_job_schedules", {
   id: text("id").primaryKey(), // Unique identifier for this schedule (e.g., "file-checker")
-  jobType: text("job_type").notNull(), // The job type to create
+  jobType: text("job_type").notNull().unique(), // The job type to create - must be unique to prevent duplicate scheduling
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 
   // Interval configuration (in milliseconds)
@@ -266,4 +286,7 @@ export const periodicJobSchedules = sqliteTable("periodic_job_schedules", {
   // Audit fields
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-});
+}, (table) => [
+  index("periodic_job_schedules_enabled_idx").on(table.enabled),
+  index("periodic_job_schedules_next_run_idx").on(table.nextRunAt),
+]);

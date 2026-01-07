@@ -5,71 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1767464059418,
-      "tag": "0000_cooing_skreet",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1767483122141,
-      "tag": "0001_clever_excalibur",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1767514698081,
-      "tag": "0002_safe_ken_ellis",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1767569087097,
-      "tag": "0003_fuzzy_speedball",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1767641634816,
-      "tag": "0004_jazzy_metal_master",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1767649048223,
-      "tag": "0005_flowery_sleepwalker",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1767650114993,
-      "tag": "0006_parallel_epoch",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1767700000000,
-      "tag": "0007_periodic_job_schedules",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1767720101198,
-      "tag": "0008_striped_wilson_fisk",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1767723866956,
-      "tag": "0009_tiresome_metal_master",
+      "when": 1767769507769,
+      "tag": "0000_romantic_wolf_cub",
       "breakpoints": true
     }
   ]
