@@ -691,7 +691,8 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
           throw new Error("No file data available");
         }
 
-        const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
+        // Note: .svg is not supported by OpenAI vision API
+        const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
         const imageAttachment = fileData.attachments.find((a) =>
           imageExtensions.some((ext) => a.toLowerCase().endsWith(ext))
         );
@@ -702,6 +703,8 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
 
         return {
           filePath: getAttachmentPath(trigger.filePath, imageAttachment),
+          openaiApiKey: trigger.openaiApiKey,
+          openaiModel: trigger.openaiModel,
         };
       },
       condition: {
@@ -800,45 +803,55 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
         let extractedContent: unknown;
         let formattedExtraction = "";
 
+        // Log available step outputs for debugging
+        logger.debug({
+          event: "workflow.update_file.step_outputs",
+          filePath: trigger.filePath,
+          contentType: trigger.contentType,
+          availableSteps: Object.keys(ctx.stepOutputs),
+          extractStepOutput: ctx.stepOutputs[`extract-${trigger.contentType}`],
+        });
+
         // Get the extracted content based on type
+        // Tool step outputs are wrapped as { result: <tool output>, metadata: ... }
         switch (trigger.contentType) {
           case "audio": {
-            const audioResult = ctx.stepOutputs["extract-audio"] as { output?: AudioExtractionResult };
-            if (audioResult?.output) {
-              extractedContent = audioResult.output;
-              formattedExtraction = formatAudioExtraction(audioResult.output);
+            const audioResult = ctx.stepOutputs["extract-audio"] as { result?: AudioExtractionResult };
+            if (audioResult?.result) {
+              extractedContent = audioResult.result;
+              formattedExtraction = formatAudioExtraction(audioResult.result);
             }
             break;
           }
           case "video": {
-            const videoResult = ctx.stepOutputs["extract-video"] as { output?: VideoExtractionResult };
-            if (videoResult?.output) {
-              extractedContent = videoResult.output;
-              formattedExtraction = formatVideoExtraction(videoResult.output);
+            const videoResult = ctx.stepOutputs["extract-video"] as { result?: VideoExtractionResult };
+            if (videoResult?.result) {
+              extractedContent = videoResult.result;
+              formattedExtraction = formatVideoExtraction(videoResult.result);
             }
             break;
           }
           case "image": {
-            const imageResult = ctx.stepOutputs["extract-image"] as { output?: ImageExtractionResult };
-            if (imageResult?.output) {
-              extractedContent = imageResult.output;
-              formattedExtraction = formatImageExtraction(imageResult.output);
+            const imageResult = ctx.stepOutputs["extract-image"] as { result?: ImageExtractionResult };
+            if (imageResult?.result) {
+              extractedContent = imageResult.result;
+              formattedExtraction = formatImageExtraction(imageResult.result);
             }
             break;
           }
           case "url": {
-            const urlResult = ctx.stepOutputs["extract-url"] as { output?: UrlExtractionResult };
-            if (urlResult?.output) {
-              extractedContent = urlResult.output;
-              formattedExtraction = formatUrlExtraction(urlResult.output);
+            const urlResult = ctx.stepOutputs["extract-url"] as { result?: UrlExtractionResult };
+            if (urlResult?.result) {
+              extractedContent = urlResult.result;
+              formattedExtraction = formatUrlExtraction(urlResult.result);
             }
             break;
           }
           case "document": {
-            const documentResult = ctx.stepOutputs["extract-document"] as { output?: DocumentExtractionResult };
-            if (documentResult?.output) {
-              extractedContent = documentResult.output;
-              formattedExtraction = formatDocumentExtraction(documentResult.output);
+            const documentResult = ctx.stepOutputs["extract-document"] as { result?: DocumentExtractionResult };
+            if (documentResult?.result) {
+              extractedContent = documentResult.result;
+              formattedExtraction = formatDocumentExtraction(documentResult.result);
             }
             break;
           }
@@ -847,6 +860,16 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
             formattedExtraction = "";
             break;
           }
+        }
+
+        // Log warning if no extraction was found for non-text content
+        if (trigger.contentType !== "text" && !extractedContent) {
+          logger.warn({
+            event: "workflow.update_file.no_extraction",
+            filePath: trigger.filePath,
+            contentType: trigger.contentType,
+            stepOutputKeys: Object.keys(ctx.stepOutputs),
+          });
         }
 
         // Update frontmatter

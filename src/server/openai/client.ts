@@ -24,6 +24,7 @@ export const DEFAULT_VISION_MODEL = "gpt-4o";
  */
 export interface OpenAIConfig {
   apiKey: string;
+  /** Optional custom base URL (e.g., for Azure OpenAI or proxies). SDK uses OpenAI's API by default. */
   baseUrl?: string;
   model?: string;
   timeout?: number;
@@ -99,15 +100,31 @@ export interface ChatCompletionResult {
  * OpenAI API Client
  */
 export class OpenAIClient {
-  private config: Required<Omit<OpenAIConfig, "model">> & { model?: string };
+  private config: {
+    apiKey: string;
+    baseUrl?: string;
+    model?: string;
+    timeout: number;
+  };
 
   constructor(config: OpenAIConfig) {
     this.config = {
       apiKey: config.apiKey,
-      baseUrl: config.baseUrl ?? "https://api.openai.com/v1",
+      baseUrl: config.baseUrl, // Only set if explicitly provided (for Azure/proxies)
       model: config.model,
       timeout: config.timeout ?? 120000,
     };
+  }
+
+  /**
+   * Create an OpenAI SDK client instance
+   */
+  private createClient(): OpenAI {
+    return new OpenAI({
+      apiKey: this.config.apiKey,
+      ...(this.config.baseUrl && { baseURL: this.config.baseUrl }),
+      timeout: this.config.timeout,
+    });
   }
 
   /**
@@ -127,12 +144,7 @@ export class OpenAIClient {
     });
 
     try {
-      // Create official OpenAI client
-      const openai = new OpenAI({
-        apiKey: this.config.apiKey,
-        baseURL: this.config.baseUrl,
-        timeout: this.config.timeout,
-      });
+      const openai = this.createClient();
 
       // Use the official SDK with fs.createReadStream (the recommended approach)
       const transcriptionOptions: OpenAI.Audio.TranscriptionCreateParams = {
@@ -299,7 +311,7 @@ export class OpenAIClient {
   }
 
   /**
-   * Make a chat completion request
+   * Make a chat completion request using the official OpenAI SDK
    */
   async chatCompletion(
     messages: ChatMessage[],
@@ -314,57 +326,45 @@ export class OpenAIClient {
     });
 
     try {
-      const body: Record<string, unknown> = {
+      const openai = this.createClient();
+
+      // Build request parameters
+      const params: OpenAI.ChatCompletionCreateParams = {
         model,
         messages: messages.map((m) => ({
           role: m.role,
-          content: m.content,
-        })),
+          content: m.content as OpenAI.ChatCompletionContentPart[] | string,
+        })) as OpenAI.ChatCompletionMessageParam[],
       };
 
       if (options?.temperature !== undefined) {
-        body.temperature = options.temperature;
+        params.temperature = options.temperature;
       }
       if (options?.maxTokens !== undefined) {
-        body.max_tokens = options.maxTokens;
+        params.max_tokens = options.maxTokens;
       }
       if (options?.responseFormat) {
-        body.response_format = options.responseFormat;
+        params.response_format = options.responseFormat;
       }
 
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.config.timeout),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
-      }
-
-      const data = await response.json();
-      const choice = data.choices?.[0];
+      const response = await openai.chat.completions.create(params);
+      const choice = response.choices?.[0];
 
       logger.debug({
         event: "openai.chatCompletion.complete",
-        model: data.model,
-        usage: data.usage,
+        model: response.model,
+        usage: response.usage,
         finishReason: choice?.finish_reason,
       });
 
       return {
         content: choice?.message?.content ?? "",
-        model: data.model,
-        usage: data.usage
+        model: response.model,
+        usage: response.usage
           ? {
-              promptTokens: data.usage.prompt_tokens,
-              completionTokens: data.usage.completion_tokens,
-              totalTokens: data.usage.total_tokens,
+              promptTokens: response.usage.prompt_tokens,
+              completionTokens: response.usage.completion_tokens,
+              totalTokens: response.usage.total_tokens,
             }
           : undefined,
         finishReason: choice?.finish_reason,
