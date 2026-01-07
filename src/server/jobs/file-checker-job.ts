@@ -360,7 +360,7 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
       }> {
         const startTime = Date.now();
 
-        logger.info({
+        logger.debug({
           event: "file-checker-job.scan.start",
           jobId: ctx.job.id,
           scheduleId: ctx.job.payload._scheduleId,
@@ -417,15 +417,26 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
 
           const duration = Date.now() - startTime;
 
-          logger.info({
-            event: "file-checker-job.scan.complete",
-            jobId: ctx.job.id,
-            vaultsChecked: result.vaultsChecked,
-            filesFound: result.filesFound,
-            workflowJobsCreated: result.workflowJobsCreated,
-            errorCount: result.errors.length,
-            durationMs: duration,
-          }, "File checker scan complete");
+          // Only log at INFO level if files were found
+          if (result.filesFound > 0) {
+            logger.info({
+              event: "file-checker-job.scan.complete",
+              jobId: ctx.job.id,
+              vaultsChecked: result.vaultsChecked,
+              filesFound: result.filesFound,
+              workflowJobsCreated: result.workflowJobsCreated,
+              errorCount: result.errors.length,
+              durationMs: duration,
+            }, "File checker scan complete");
+          } else {
+            logger.debug({
+              event: "file-checker-job.scan.complete",
+              jobId: ctx.job.id,
+              vaultsChecked: result.vaultsChecked,
+              filesFound: 0,
+              durationMs: duration,
+            }, "File checker scan complete (no new files)");
+          }
 
           return {
             success: true,
@@ -451,13 +462,21 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
 
   async onComplete(job, result) {
     const fileResult = result as FileCheckerJobResult;
-    logger.info({
-      event: "file-checker-job.completed",
-      jobId: job.id,
-      vaultsChecked: fileResult?.vaultsChecked,
-      filesFound: fileResult?.filesFound,
-      workflowJobsCreated: fileResult?.workflowJobsCreated,
-    }, "File checker job completed");
+    // Only log at INFO level if files were processed
+    if (fileResult?.filesFound && fileResult.filesFound > 0) {
+      logger.info({
+        event: "file-checker-job.completed",
+        jobId: job.id,
+        vaultsChecked: fileResult.vaultsChecked,
+        filesFound: fileResult.filesFound,
+        workflowJobsCreated: fileResult.workflowJobsCreated,
+      }, "File checker job completed");
+    } else {
+      logger.debug({
+        event: "file-checker-job.completed",
+        jobId: job.id,
+      }, "File checker job completed (no files)");
+    }
   },
 
   async onFailed(job, error) {

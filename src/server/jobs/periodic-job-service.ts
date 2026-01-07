@@ -283,7 +283,7 @@ export async function processDueSchedules(): Promise<{
 
       created.push(job.id);
 
-      logger.info({
+      logger.debug({
         event: "periodic.job.created",
         scheduleId: schedule.id,
         jobId: job.id,

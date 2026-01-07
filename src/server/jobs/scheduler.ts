@@ -210,7 +210,7 @@ export class QueueScheduler {
       const periodicJobsCreated = periodicResult.created.length;
 
       if (periodicJobsCreated > 0) {
-        logger.info({
+        logger.debug({
           event: "scheduler.periodic.created",
           count: periodicJobsCreated,
           jobIds: periodicResult.created,
@@ -260,12 +260,22 @@ export class QueueScheduler {
       this.status.totalRuns++;
       this.status.totalJobsProcessed += jobsProcessed;
 
-      logger.info({
-        event: "scheduler.processing_completed",
-        jobsProcessed,
-        periodicJobsCreated,
-        durationMs: duration,
-      }, "Queue processing completed");
+      // Only log at INFO level if actual work was done
+      if (jobsProcessed > 0 || periodicJobsCreated > 0) {
+        logger.info({
+          event: "scheduler.processing_completed",
+          jobsProcessed,
+          periodicJobsCreated,
+          durationMs: duration,
+        }, "Queue processing completed");
+      } else {
+        logger.debug({
+          event: "scheduler.processing_completed",
+          jobsProcessed,
+          periodicJobsCreated,
+          durationMs: duration,
+        }, "Queue processing completed (no work)");
+      }
 
       return { success: true, jobsProcessed, periodicJobsCreated, duration };
     } catch (err) {

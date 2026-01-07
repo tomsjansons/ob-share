@@ -123,7 +123,7 @@ export class QueueHandler {
     // Emit start event
     this.emit({ type: "handler:started", handlerId: this.config.handlerId });
 
-    logger.info({ event: "queue.handler.started", handlerId: this.config.handlerId }, "Queue handler started");
+    logger.debug({ event: "queue.handler.started", handlerId: this.config.handlerId }, "Queue handler started");
 
     // Start polling
     await this.poll();
@@ -138,7 +138,7 @@ export class QueueHandler {
     }
 
     this.isStopping = true;
-    logger.info({ event: "queue.handler.stopping", handlerId: this.config.handlerId }, "Queue handler stopping");
+    logger.debug({ event: "queue.handler.stopping", handlerId: this.config.handlerId }, "Queue handler stopping");
 
     // Stop polling
     if (this.pollTimer) {
@@ -173,7 +173,7 @@ export class QueueHandler {
     this.isStopping = false;
 
     this.emit({ type: "handler:stopped", handlerId: this.config.handlerId });
-    logger.info({ event: "queue.handler.stopped", handlerId: this.config.handlerId, jobsProcessed: this.stats.jobsProcessed, jobsFailed: this.stats.jobsFailed }, "Queue handler stopped");
+    logger.debug({ event: "queue.handler.stopped", handlerId: this.config.handlerId, jobsProcessed: this.stats.jobsProcessed, jobsFailed: this.stats.jobsFailed }, "Queue handler stopped");
   }
 
   /**
@@ -212,7 +212,7 @@ export class QueueHandler {
       return;
     }
 
-    logger.info({
+    logger.debug({
       event: "queue.poll.start",
       handlerId: this.config.handlerId,
       currentJobs: this.currentJobs.size,
@@ -221,7 +221,7 @@ export class QueueHandler {
 
     try {
       const processed = await this.processPendingJobs();
-      logger.info({
+      logger.debug({
         event: "queue.poll.complete",
         handlerId: this.config.handlerId,
         jobsProcessed: processed,
@@ -288,14 +288,17 @@ export class QueueHandler {
       .orderBy(asc(jobs.priority), asc(jobs.createdAt))
       .limit(availableSlots);
 
-    logger.info({
-      event: "queue.process.jobs_found",
-      handlerId: this.config.handlerId,
-      pendingJobsCount: pendingJobs.length,
-      availableSlots,
-      jobIds: pendingJobs.map(j => j.id),
-      jobTypes: pendingJobs.map(j => j.type),
-    });
+    // Only log at INFO level if there are jobs to process
+    if (pendingJobs.length > 0) {
+      logger.info({
+        event: "queue.process.jobs_found",
+        handlerId: this.config.handlerId,
+        pendingJobsCount: pendingJobs.length,
+        availableSlots,
+        jobIds: pendingJobs.map(j => j.id),
+        jobTypes: pendingJobs.map(j => j.type),
+      });
+    }
 
     let processedCount = 0;
 
@@ -314,7 +317,7 @@ export class QueueHandler {
       const claimed = await this.claimJob(job.id);
       if (claimed) {
         processedCount++;
-        logger.info({
+        logger.debug({
           event: "queue.process.job_claimed",
           handlerId: this.config.handlerId,
           jobId: job.id,
@@ -457,7 +460,7 @@ export class QueueHandler {
     this.stats.jobsProcessed++;
     this.emit({ type: "job:completed", job, result });
 
-    logger.info({ event: "job.completed", jobId: job.id, jobType: job.type, handlerId: this.config.handlerId }, "Job completed");
+    logger.debug({ event: "job.completed", jobId: job.id, jobType: job.type, handlerId: this.config.handlerId }, "Job completed");
 
     // Call onComplete hook
     const definition = this.jobDefinitions.get(job.type);
