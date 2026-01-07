@@ -13,5 +13,7 @@ export {
   updateFileWithError,
   getAttachmentPath,
   parseFrontmatter,
-  buildFrontmatter,
+  buildMarkdown,
+  isReadyForRetry,
+  detectContentType,
 } from "./file-checker";

@@ -314,7 +314,8 @@ export class QueueHandler {
       });
 
       // Try to claim the job by updating visibility timeout
-      const claimed = await this.claimJob(job.id);
+      // Pass the reference time used in the SELECT query to ensure consistent comparison
+      const claimed = await this.claimJob(job.id, now);
       if (claimed) {
         processedCount++;
         logger.debug({
@@ -328,10 +329,13 @@ export class QueueHandler {
           logger.error({ event: "job.process.error", jobId: job.id, jobType: job.type, err }, "Error processing job");
         });
       } else {
-        logger.debug({
+        // Log at info level to help diagnose claim failures
+        logger.info({
           event: "queue.process.job_claim_failed",
           handlerId: this.config.handlerId,
           jobId: job.id,
+          jobType: job.type,
+          referenceTime: now.toISOString(),
           reason: "Job was claimed by another handler or status changed",
         });
       }
@@ -348,10 +352,22 @@ export class QueueHandler {
 
   /**
    * Claim a job for processing by setting visibility timeout
+   * @param jobId - The job ID to claim
+   * @param referenceTime - The reference time to use for visibility check (should match the SELECT query time)
    */
-  private async claimJob(jobId: string): Promise<boolean> {
-    const now = new Date();
-    const visibleAt = new Date(now.getTime() + this.config.visibilityTimeout);
+  private async claimJob(jobId: string, referenceTime?: Date): Promise<boolean> {
+    const now = referenceTime || new Date();
+    const claimTime = new Date();
+    const visibleAt = new Date(claimTime.getTime() + this.config.visibilityTimeout);
+
+    logger.debug({
+      event: "queue.claim.attempt",
+      handlerId: this.config.handlerId,
+      jobId,
+      referenceTime: now.toISOString(),
+      referenceTimeMs: now.getTime(),
+      claimTime: claimTime.toISOString(),
+    });
 
     // Atomic update - only succeeds if job is still claimable
     const result = await db
@@ -360,8 +376,8 @@ export class QueueHandler {
         status: "processing",
         visibleAt,
         handlerId: this.config.handlerId,
-        startedAt: now,
-        updatedAt: now,
+        startedAt: claimTime,
+        updatedAt: claimTime,
       })
       .where(
         and(

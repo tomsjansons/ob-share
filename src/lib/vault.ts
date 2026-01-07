@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { logger } from "./logger";
+import { buildMarkdown } from "./frontmatter";
 
 // Create a child logger for vault operations
 const vaultLogger = logger.child({ module: "vault" });
@@ -74,18 +75,6 @@ function getTimestamp(): string {
 }
 
 /**
- * Escape a string value for YAML double-quoted strings
- */
-function escapeYamlString(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\") // Escape backslashes first
-    .replace(/"/g, '\\"') // Escape double quotes
-    .replace(/\n/g, "\\n") // Escape newlines
-    .replace(/\r/g, "\\r") // Escape carriage returns
-    .replace(/\t/g, "\\t"); // Escape tabs
-}
-
-/**
  * Formats location info for frontmatter
  */
 function formatLocation(location?: LocationInfo): string {
@@ -104,28 +93,23 @@ function formatLocation(location?: LocationInfo): string {
 }
 
 /**
- * Generates frontmatter YAML for a note
+ * Generates frontmatter data object for a note
  */
-function generateFrontmatter(options: {
+function generateFrontmatterData(options: {
   location?: LocationInfo;
   created: Date;
   tags: string[];
   projects: string[];
-}): string {
+}): Record<string, unknown> {
   const { location, created, tags, projects } = options;
 
-  const lines = [
-    "---",
-    `location: "${escapeYamlString(formatLocation(location))}"`,
-    `created: ${created.toISOString()}`,
-    `status: "new"`,
-    `tags: [${tags.map(t => `"${escapeYamlString(t)}"`).join(", ")}]`,
-    `projects: [${projects.map(p => `"${escapeYamlString(p)}"`).join(", ")}]`,
-    "---",
-    "",
-  ];
-
-  return lines.join("\n");
+  return {
+    location: formatLocation(location),
+    created: created.toISOString(),
+    status: "new",
+    tags,
+    projects,
+  };
 }
 
 /**
@@ -265,8 +249,8 @@ export async function saveToVault(options: SaveToVaultOptions): Promise<SaveResu
       }
     }
 
-    // Generate the markdown note
-    const frontmatter = generateFrontmatter({
+    // Generate the markdown note using gray-matter
+    const frontmatterData = generateFrontmatterData({
       location: options.location,
       created,
       tags: [],
@@ -274,7 +258,7 @@ export async function saveToVault(options: SaveToVaultOptions): Promise<SaveResu
     });
 
     const markdownContent = generateMarkdownContent(options, savedFileNames);
-    const fullContent = frontmatter + markdownContent;
+    const fullContent = buildMarkdown(frontmatterData, markdownContent);
 
     // Save the note
     const notePath = path.join(incomingPath, `${baseFilename}.md`);

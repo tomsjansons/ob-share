@@ -11,100 +11,12 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { logger as baseLogger } from "@/lib/logger";
+import { parseFrontmatter, buildMarkdown } from "@/lib/frontmatter";
 
 const logger = baseLogger.child({ module: "file-checker" });
 
-/**
- * Parse YAML frontmatter from markdown content
- */
-export function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
-  const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
-  const match = content.match(frontmatterRegex);
-
-  if (!match) {
-    return { frontmatter: {}, body: content };
-  }
-
-  const frontmatterText = match[1];
-  const body = match[2];
-
-  // Simple YAML parsing (handles basic key: value pairs)
-  const frontmatter: Record<string, unknown> = {};
-  const lines = frontmatterText.split("\n");
-
-  for (const line of lines) {
-    const colonIndex = line.indexOf(":");
-    if (colonIndex > 0) {
-      const key = line.substring(0, colonIndex).trim();
-      let value: unknown = line.substring(colonIndex + 1).trim();
-
-      // Remove quotes if present and unescape the value
-      if (typeof value === "string") {
-        let strValue = value;
-        if (strValue.startsWith('"') && strValue.endsWith('"')) {
-          // Double-quoted string: strip quotes and unescape
-          strValue = unescapeYamlString(strValue.slice(1, -1));
-        } else if (strValue.startsWith("'") && strValue.endsWith("'")) {
-          // Single-quoted string: strip quotes (no escaping in single quotes)
-          strValue = strValue.slice(1, -1);
-        }
-        // Handle arrays
-        if (strValue.startsWith("[") && strValue.endsWith("]")) {
-          try {
-            value = JSON.parse(strValue.replace(/'/g, '"'));
-          } catch {
-            // Keep as string if parsing fails
-            value = strValue;
-          }
-        } else if (strValue === "null") {
-          value = null;
-        } else if (strValue === "true") {
-          value = true;
-        } else if (strValue === "false") {
-          value = false;
-        } else if (/^-?\d+$/.test(strValue)) {
-          // Parse integers
-          value = parseInt(strValue, 10);
-        } else if (/^-?\d+\.\d+$/.test(strValue)) {
-          // Parse floats
-          value = parseFloat(strValue);
-        } else {
-          value = strValue;
-        }
-      }
-
-      frontmatter[key] = value;
-    }
-  }
-
-  return { frontmatter, body };
-}
-
-/**
- * Escape a string value for YAML double-quoted strings
- * Escapes backslashes first, then double quotes
- */
-function escapeYamlString(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\") // Escape backslashes first
-    .replace(/"/g, '\\"') // Escape double quotes
-    .replace(/\n/g, "\\n") // Escape newlines
-    .replace(/\r/g, "\\r") // Escape carriage returns
-    .replace(/\t/g, "\\t"); // Escape tabs
-}
-
-/**
- * Unescape a YAML double-quoted string value
- * Reverses the escaping done by escapeYamlString
- */
-function unescapeYamlString(value: string): string {
-  return value
-    .replace(/\\t/g, "\t") // Unescape tabs
-    .replace(/\\r/g, "\r") // Unescape carriage returns
-    .replace(/\\n/g, "\n") // Unescape newlines
-    .replace(/\\"/g, '"') // Unescape double quotes
-    .replace(/\\\\/g, "\\"); // Unescape backslashes last
-}
+// Re-export for convenience
+export { parseFrontmatter, buildMarkdown };
 
 /**
  * Sanitize a string for safe storage in YAML frontmatter
@@ -120,36 +32,16 @@ function sanitizeForFrontmatter(value: string): string {
 }
 
 /**
- * Rebuild frontmatter to string
- */
-export function buildFrontmatter(frontmatter: Record<string, unknown>): string {
-  const lines = ["---"];
-  for (const [key, value] of Object.entries(frontmatter)) {
-    if (Array.isArray(value)) {
-      lines.push(`${key}: [${value.map((v) => `"${escapeYamlString(String(v))}"`).join(", ")}]`);
-    } else if (typeof value === "string") {
-      lines.push(`${key}: "${escapeYamlString(value)}"`);
-    } else if (value === null || value === undefined) {
-      lines.push(`${key}: null`);
-    } else {
-      lines.push(`${key}: ${String(value)}`);
-    }
-  }
-  lines.push("---");
-  return lines.join("\n");
-}
-
-/**
  * Update frontmatter status in a markdown file
  */
 export async function updateFileStatus(filePath: string, newStatus: string): Promise<void> {
   try {
     const content = await fs.readFile(filePath, "utf-8");
-    const { frontmatter, body } = parseFrontmatter(content);
+    const parsed = parseFrontmatter(content);
 
-    frontmatter.status = newStatus;
+    parsed.data.status = newStatus;
 
-    const newContent = buildFrontmatter(frontmatter) + "\n\n" + body.trimStart();
+    const newContent = buildMarkdown(parsed.data, parsed.content);
     await fs.writeFile(filePath, newContent, "utf-8");
 
     logger.debug({
@@ -189,26 +81,26 @@ export async function updateFileWithError(
 ): Promise<{ shouldRetry: boolean; retryNum: number; nextRetryAt: Date | null }> {
   try {
     const content = await fs.readFile(filePath, "utf-8");
-    const { frontmatter, body } = parseFrontmatter(content);
+    const parsed = parseFrontmatter(content);
 
     // Get current retry count
-    const currentRetryNum = typeof frontmatter["retry-num"] === "number" ? frontmatter["retry-num"] : 0;
+    const currentRetryNum = typeof parsed.data["retry-num"] === "number" ? parsed.data["retry-num"] : 0;
     const newRetryNum = currentRetryNum + 1;
 
     // Check if we should retry
     const shouldRetry = newRetryNum <= maxRetries;
 
     // Update frontmatter (sanitize error to remove newlines from JSON responses)
-    frontmatter["retry-num"] = newRetryNum;
-    frontmatter["last-error"] = sanitizeForFrontmatter(error);
-    frontmatter["last-error-at"] = new Date().toISOString();
+    parsed.data["retry-num"] = newRetryNum;
+    parsed.data["last-error"] = sanitizeForFrontmatter(error);
+    parsed.data["last-error-at"] = new Date().toISOString();
 
     if (shouldRetry) {
       // Calculate next retry time with exponential backoff
       const backoffMs = calculateBackoffMs(newRetryNum);
       const nextRetryAt = new Date(Date.now() + backoffMs);
-      frontmatter.status = "retry";
-      frontmatter["next-retry-at"] = nextRetryAt.toISOString();
+      parsed.data.status = "retry";
+      parsed.data["next-retry-at"] = nextRetryAt.toISOString();
 
       logger.info({
         event: "file-checker.retry_scheduled",
@@ -220,8 +112,8 @@ export async function updateFileWithError(
       });
     } else {
       // Max retries exceeded
-      frontmatter.status = "extraction_failed";
-      frontmatter["next-retry-at"] = null;
+      parsed.data.status = "extraction_failed";
+      parsed.data["next-retry-at"] = null;
 
       logger.warn({
         event: "file-checker.max_retries_exceeded",
@@ -232,21 +124,21 @@ export async function updateFileWithError(
     }
 
     // Add error details section to body if not already present
-    let newBody = body;
+    let newBody = parsed.content;
     const errorSection = `\n\n---\n\n## Extraction Error (Attempt ${newRetryNum}/${maxRetries})\n\n**Error:** ${error}\n\n**Time:** ${new Date().toISOString()}\n\n`;
 
     // Check if body already has an error section
-    if (!body.includes("## Extraction Error")) {
-      newBody = body + errorSection;
+    if (!parsed.content.includes("## Extraction Error")) {
+      newBody = parsed.content + errorSection;
     } else {
       // Append to existing error section
-      newBody = body.replace(
+      newBody = parsed.content.replace(
         /(## Extraction Error[\s\S]*?)(\n\n---|\n\n## (?!Extraction Error)|$)/,
         `$1${errorSection.trim()}\n\n$2`
       );
     }
 
-    const newContent = buildFrontmatter(frontmatter) + "\n\n" + newBody.trimStart();
+    const newContent = buildMarkdown(parsed.data, newBody);
     await fs.writeFile(filePath, newContent, "utf-8");
 
     return {
@@ -267,12 +159,12 @@ export async function updateFileWithError(
 /**
  * Check if a file is ready for retry based on next-retry-at timestamp
  */
-function isReadyForRetry(frontmatter: Record<string, unknown>): boolean {
-  if (frontmatter.status !== "retry") {
+export function isReadyForRetry(data: Record<string, unknown>): boolean {
+  if (data.status !== "retry") {
     return false;
   }
 
-  const nextRetryAt = frontmatter["next-retry-at"];
+  const nextRetryAt = data["next-retry-at"];
   if (!nextRetryAt || typeof nextRetryAt !== "string") {
     return true; // If no timestamp, retry immediately
   }
@@ -284,8 +176,9 @@ function isReadyForRetry(frontmatter: Record<string, unknown>): boolean {
 /**
  * Detect content type from file content
  */
-export function detectContentType(content: string, frontmatter: Record<string, unknown>): "audio" | "video" | "image" | "url" | "document" | "text" {
-  const body = content.split("---").slice(2).join("---").trim();
+export function detectContentType(content: string): "audio" | "video" | "image" | "url" | "document" | "text" {
+  const parsed = parseFrontmatter(content);
+  const body = parsed.content;
 
   // Check for embedded audio/video/image/document links
   const audioExtensions = [".mp3", ".wav", ".ogg", ".webm", ".m4a"];

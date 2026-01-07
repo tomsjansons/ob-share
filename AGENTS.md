@@ -146,6 +146,50 @@ To modify accepted file types, update `public/manifest.json`. Include both MIME 
 ]
 ```
 
+## Frontmatter Handling
+
+**IMPORTANT:** All YAML frontmatter parsing and building MUST use the `gray-matter` library via the shared utilities in `src/lib/frontmatter.ts`.
+
+### Key Frontmatter Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/frontmatter.ts` | Shared utilities wrapping gray-matter |
+
+### Available Functions
+
+```typescript
+import { parseFrontmatter, buildMarkdown, updateFrontmatter, hasFrontmatter } from "@/lib/frontmatter";
+
+// Parse markdown with frontmatter
+const parsed = parseFrontmatter(content);
+// parsed.data - frontmatter as object
+// parsed.content - body content without frontmatter
+
+// Build markdown from frontmatter data and body
+const markdown = buildMarkdown(data, body);
+
+// Update frontmatter while preserving body
+const updated = updateFrontmatter(content, { status: "extracted" });
+
+// Check if content has frontmatter
+const has = hasFrontmatter(content);
+```
+
+### Guidelines
+
+1. **Never implement custom frontmatter parsing** - Always use the shared utilities
+2. **Never manually build YAML strings** - Use `buildMarkdown()` to properly escape values
+3. **Use `parsed.data` and `parsed.content`** - These are the gray-matter output properties
+4. **Re-export types from gray-matter** - Don't create new types, use `GrayMatterFile<string>`
+
+### Why gray-matter?
+
+- Robust YAML parsing that handles edge cases (multiline strings, special characters, etc.)
+- Consistent escaping across all files
+- Well-tested library used by many markdown tools
+- Prevents bugs from inconsistent custom implementations
+
 ## Vault Integration
 
 The app saves shared content to the Obsidian vault automatically. Vault path is configured per-user via the settings page.

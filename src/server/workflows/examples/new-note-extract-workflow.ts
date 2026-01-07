@@ -25,6 +25,7 @@ import {
 import type { WorkflowContext } from "../types";
 import { updateFileStatus, updateFileWithError, getAttachmentPath } from "@/server/file-checker";
 import { logger as baseLogger } from "@/lib/logger";
+import { parseFrontmatter, buildMarkdown } from "@/lib/frontmatter";
 import type {
   AudioExtractionResult,
   VideoExtractionResult,
@@ -80,112 +81,6 @@ export type NewNoteExtractResult = z.infer<typeof NewNoteExtractResultSchema>;
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-/**
- * Parse YAML frontmatter from markdown content
- */
-function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
-  const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
-  const match = content.match(frontmatterRegex);
-
-  if (!match) {
-    return { frontmatter: {}, body: content };
-  }
-
-  const frontmatterText = match[1];
-  const body = match[2];
-
-  const frontmatter: Record<string, unknown> = {};
-  const lines = frontmatterText.split("\n");
-
-  for (const line of lines) {
-    const colonIndex = line.indexOf(":");
-    if (colonIndex > 0) {
-      const key = line.substring(0, colonIndex).trim();
-      let value: unknown = line.substring(colonIndex + 1).trim();
-
-      if (typeof value === "string") {
-        let strValue = value;
-        if (strValue.startsWith('"') && strValue.endsWith('"')) {
-          // Double-quoted string: strip quotes and unescape
-          strValue = unescapeYamlString(strValue.slice(1, -1));
-        } else if (strValue.startsWith("'") && strValue.endsWith("'")) {
-          // Single-quoted string: strip quotes (no escaping in single quotes)
-          strValue = strValue.slice(1, -1);
-        }
-        if (strValue.startsWith("[") && strValue.endsWith("]")) {
-          try {
-            value = JSON.parse(strValue.replace(/'/g, '"'));
-          } catch {
-            // Keep as string
-            value = strValue;
-          }
-        } else if (strValue === "null") {
-          value = null;
-        } else if (strValue === "true") {
-          value = true;
-        } else if (strValue === "false") {
-          value = false;
-        } else if (/^-?\d+$/.test(strValue)) {
-          value = parseInt(strValue, 10);
-        } else if (/^-?\d+\.\d+$/.test(strValue)) {
-          value = parseFloat(strValue);
-        } else {
-          value = strValue;
-        }
-      }
-
-      frontmatter[key] = value;
-    }
-  }
-
-  return { frontmatter, body };
-}
-
-/**
- * Escape a string value for YAML double-quoted strings
- */
-function escapeYamlString(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, "\\n")
-    .replace(/\r/g, "\\r")
-    .replace(/\t/g, "\\t");
-}
-
-/**
- * Unescape a YAML double-quoted string value
- * Reverses the escaping done by escapeYamlString
- */
-function unescapeYamlString(value: string): string {
-  return value
-    .replace(/\\t/g, "\t") // Unescape tabs
-    .replace(/\\r/g, "\r") // Unescape carriage returns
-    .replace(/\\n/g, "\n") // Unescape newlines
-    .replace(/\\"/g, '"') // Unescape double quotes
-    .replace(/\\\\/g, "\\"); // Unescape backslashes last
-}
-
-/**
- * Rebuild frontmatter to string
- */
-function buildFrontmatter(frontmatter: Record<string, unknown>): string {
-  const lines = ["---"];
-  for (const [key, value] of Object.entries(frontmatter)) {
-    if (Array.isArray(value)) {
-      lines.push(`${key}: [${value.map((v) => `"${escapeYamlString(String(v))}"`).join(", ")}]`);
-    } else if (typeof value === "string") {
-      lines.push(`${key}: "${escapeYamlString(value)}"`);
-    } else if (value === null || value === undefined) {
-      lines.push(`${key}: null`);
-    } else {
-      lines.push(`${key}: ${String(value)}`);
-    }
-  }
-  lines.push("---");
-  return lines.join("\n");
-}
 
 /**
  * Extract attachment filenames from markdown content
@@ -579,7 +474,7 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
       name: "Read Note File",
       transform: async (ctx): Promise<{
         content: string;
-        frontmatter: Record<string, unknown>;
+        data: Record<string, unknown>;
         body: string;
         attachments: string[];
         urls: string[];
@@ -592,14 +487,14 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
         });
 
         const content = await fs.readFile(trigger.filePath, "utf-8");
-        const { frontmatter, body } = parseFrontmatter(content);
-        const attachments = extractAttachments(body);
-        const urls = extractUrls(body);
+        const parsed = parseFrontmatter(content);
+        const attachments = extractAttachments(parsed.content);
+        const urls = extractUrls(parsed.content);
 
         return {
           content,
-          frontmatter,
-          body,
+          data: parsed.data,
+          body: parsed.content,
           attachments,
           urls,
         };
@@ -785,17 +680,17 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
         const trigger = ctx.trigger as NewNoteExtractTrigger;
         const fileData = ctx.variables.fileData as {
           content: string;
-          frontmatter: Record<string, unknown>;
+          data: Record<string, unknown>;
           body: string;
         } | undefined;
 
         // Check if fileData is available
-        if (!fileData || !fileData.frontmatter) {
+        if (!fileData || !fileData.data) {
           logger.error({
             event: "workflow.update_file.no_file_data",
             filePath: trigger.filePath,
             hasFileData: !!fileData,
-            hasFrontmatter: !!(fileData?.frontmatter),
+            hasData: !!(fileData?.data),
           });
           throw new Error("File data not available from read-file step");
         }
@@ -873,12 +768,9 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
         }
 
         // Update frontmatter
-        fileData.frontmatter.status = "extracted";
-        fileData.frontmatter.extractedAt = new Date().toISOString();
-        fileData.frontmatter.contentType = trigger.contentType;
-
-        // Build new content
-        const newFrontmatter = buildFrontmatter(fileData.frontmatter);
+        fileData.data.status = "extracted";
+        fileData.data.extractedAt = new Date().toISOString();
+        fileData.data.contentType = trigger.contentType;
 
         // Wrap original content (trimStart to avoid accumulating empty lines)
         const trimmedBody = fileData.body.trimStart();
@@ -888,7 +780,8 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
           newBody = `${formattedExtraction}\n\n---\n\n## Original Content\n\n${trimmedBody}`;
         }
 
-        const newContent = `${newFrontmatter}\n\n${newBody}`;
+        // Build new content using gray-matter
+        const newContent = buildMarkdown(fileData.data, newBody);
 
         // Write updated file
         await fs.writeFile(trigger.filePath, newContent, "utf-8");

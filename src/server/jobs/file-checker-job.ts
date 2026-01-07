@@ -15,6 +15,8 @@ import { userSettings } from "../db/schema";
 import { defineJob, JobPriority, type PhaseContext } from "./index";
 import { createWorkflowJob } from "@/server/workflows";
 import { logger as baseLogger } from "@/lib/logger";
+import { parseFrontmatter, buildMarkdown } from "@/lib/frontmatter";
+import { isReadyForRetry, detectContentType } from "@/server/file-checker";
 
 const logger = baseLogger.child({ module: "file-checker-job" });
 
@@ -42,110 +44,16 @@ export interface FileCheckerJobResult {
 }
 
 /**
- * Parse YAML frontmatter from markdown content
- */
-function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
-  const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
-  const match = content.match(frontmatterRegex);
-
-  if (!match) {
-    return { frontmatter: {}, body: content };
-  }
-
-  const frontmatterText = match[1];
-  const body = match[2];
-
-  // Simple YAML parsing (handles basic key: value pairs)
-  const frontmatter: Record<string, unknown> = {};
-  const lines = frontmatterText.split("\n");
-
-  for (const line of lines) {
-    const colonIndex = line.indexOf(":");
-    if (colonIndex > 0) {
-      const key = line.substring(0, colonIndex).trim();
-      let value: unknown = line.substring(colonIndex + 1).trim();
-
-      // Remove quotes if present
-      if (typeof value === "string") {
-        let strValue = value;
-        if ((strValue.startsWith('"') && strValue.endsWith('"')) || (strValue.startsWith("'") && strValue.endsWith("'"))) {
-          strValue = strValue.slice(1, -1);
-        }
-        // Handle arrays
-        if (strValue.startsWith("[") && strValue.endsWith("]")) {
-          try {
-            value = JSON.parse(strValue.replace(/'/g, '"'));
-          } catch {
-            // Keep as string if parsing fails
-            value = strValue;
-          }
-        } else if (strValue === "null") {
-          value = null;
-        } else if (strValue === "true") {
-          value = true;
-        } else if (strValue === "false") {
-          value = false;
-        } else if (/^-?\d+$/.test(strValue)) {
-          // Parse integers
-          value = parseInt(strValue, 10);
-        } else if (/^-?\d+\.\d+$/.test(strValue)) {
-          // Parse floats
-          value = parseFloat(strValue);
-        } else {
-          value = strValue;
-        }
-      }
-
-      frontmatter[key] = value;
-    }
-  }
-
-  return { frontmatter, body };
-}
-
-/**
- * Escape a string value for YAML double-quoted strings
- */
-function escapeYamlString(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\") // Escape backslashes first
-    .replace(/"/g, '\\"') // Escape double quotes
-    .replace(/\n/g, "\\n") // Escape newlines
-    .replace(/\r/g, "\\r") // Escape carriage returns
-    .replace(/\t/g, "\\t"); // Escape tabs
-}
-
-/**
- * Rebuild frontmatter to string
- */
-function buildFrontmatter(frontmatter: Record<string, unknown>): string {
-  const lines = ["---"];
-  for (const [key, value] of Object.entries(frontmatter)) {
-    if (Array.isArray(value)) {
-      lines.push(`${key}: [${value.map((v) => `"${escapeYamlString(String(v))}"`).join(", ")}]`);
-    } else if (typeof value === "string") {
-      lines.push(`${key}: "${escapeYamlString(value)}"`);
-    } else if (value === null || value === undefined) {
-      lines.push(`${key}: null`);
-    } else {
-      lines.push(`${key}: ${String(value)}`);
-    }
-  }
-  lines.push("---");
-  return lines.join("\n");
-}
-
-/**
  * Update frontmatter status in a markdown file
  */
 async function updateFileStatus(filePath: string, newStatus: string): Promise<void> {
   try {
     const content = await fs.readFile(filePath, "utf-8");
-    const { frontmatter, body } = parseFrontmatter(content);
+    const parsed = parseFrontmatter(content);
 
-    frontmatter.status = newStatus;
+    parsed.data.status = newStatus;
 
-    const newContent = buildFrontmatter(frontmatter) + "\n\n" + body.trimStart();
+    const newContent = buildMarkdown(parsed.data, parsed.content);
     await fs.writeFile(filePath, newContent, "utf-8");
 
     logger.debug({
@@ -162,64 +70,6 @@ async function updateFileStatus(filePath: string, newStatus: string): Promise<vo
     });
     throw err;
   }
-}
-
-/**
- * Check if a file is ready for retry based on next-retry-at timestamp
- */
-function isReadyForRetry(frontmatter: Record<string, unknown>): boolean {
-  if (frontmatter.status !== "retry") {
-    return false;
-  }
-
-  const nextRetryAt = frontmatter["next-retry-at"];
-  if (!nextRetryAt || typeof nextRetryAt !== "string") {
-    return true; // If no timestamp, retry immediately
-  }
-
-  const retryTime = new Date(nextRetryAt);
-  return Date.now() >= retryTime.getTime();
-}
-
-/**
- * Detect content type from file content
- */
-function detectContentType(content: string, frontmatter: Record<string, unknown>): "audio" | "video" | "image" | "url" | "document" | "text" {
-  const body = content.split("---").slice(2).join("---").trim();
-
-  // Check for embedded audio/video/image/document links
-  const audioExtensions = [".mp3", ".wav", ".ogg", ".webm", ".m4a"];
-  const videoExtensions = [".mp4", ".webm", ".mov", ".avi", ".mkv"];
-  const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
-  const documentExtensions = [".pdf", ".doc", ".docx", ".txt", ".md", ".markdown", ".rtf", ".odt", ".csv", ".rst"];
-
-  // Look for wiki links like ![[filename.ext]] or [[filename.ext]]
-  const wikiLinkRegex = /!?\[\[([^\]]+)\]\]/g;
-  const matches = [...body.matchAll(wikiLinkRegex)];
-
-  for (const match of matches) {
-    const filename = match[1].toLowerCase();
-    if (audioExtensions.some((ext) => filename.endsWith(ext))) {
-      return "audio";
-    }
-    if (videoExtensions.some((ext) => filename.endsWith(ext))) {
-      return "video";
-    }
-    if (imageExtensions.some((ext) => filename.endsWith(ext))) {
-      return "image";
-    }
-    if (documentExtensions.some((ext) => filename.endsWith(ext))) {
-      return "document";
-    }
-  }
-
-  // Check for URLs in the content
-  const urlRegex = /https?:\/\/[^\s<>\]]+/gi;
-  if (urlRegex.test(body)) {
-    return "url";
-  }
-
-  return "text";
 }
 
 /**
@@ -260,22 +110,28 @@ async function scanIncomingFolder(
 
       try {
         const content = await fs.readFile(filePath, "utf-8");
-        const { frontmatter } = parseFrontmatter(content);
+        const parsed = parseFrontmatter(content);
 
         // Check if status is "new" or ready for retry
-        const isNew = frontmatter.status === "new";
-        const isRetryReady = isReadyForRetry(frontmatter);
+        const isNew = parsed.data.status === "new";
+        const isRetryReady = isReadyForRetry(parsed.data);
 
         if (!isNew && !isRetryReady) {
+          logger.debug({
+            event: "file-checker-job.file_skipped",
+            filePath,
+            status: parsed.data.status,
+            reason: parsed.data.status ? `status is '${parsed.data.status}', not 'new'` : "no status in frontmatter",
+          });
           continue;
         }
 
         result.filesFound++;
 
         // Detect content type
-        const contentType = detectContentType(content, frontmatter);
-        const isRetry = frontmatter.status === "retry";
-        const retryNum = typeof frontmatter["retry-num"] === "number" ? frontmatter["retry-num"] : 0;
+        const contentType = detectContentType(content);
+        const isRetry = parsed.data.status === "retry";
+        const retryNum = typeof parsed.data["retry-num"] === "number" ? parsed.data["retry-num"] : 0;
 
         logger.info({
           event: isRetry ? "file-checker-job.retry_file_found" : "file-checker-job.new_file_found",
@@ -382,6 +238,15 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
             userCount: allSettings.length,
           });
 
+          // Log if no users have configured vaults
+          const configuredUsers = allSettings.filter(s => s.vaultName && s.incomingFolder);
+          if (configuredUsers.length === 0 && allSettings.length > 0) {
+            logger.info({
+              event: "file-checker-job.scan.no_configured_vaults",
+              totalUsers: allSettings.length,
+            }, "No users have configured vault/incoming folder");
+          }
+
           for (const settings of allSettings) {
             if (!settings.vaultName || !settings.incomingFolder) {
               continue;
@@ -394,10 +259,21 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
               await fs.access(incomingPath);
             } catch {
               // Folder doesn't exist, skip this user
+              logger.info({
+                event: "file-checker-job.scan.folder_not_found",
+                userId: settings.userId,
+                incomingPath,
+              }, "Incoming folder does not exist");
               continue;
             }
 
             result.vaultsChecked++;
+
+            logger.debug({
+              event: "file-checker-job.scan.vault_start",
+              userId: settings.userId,
+              incomingPath,
+            });
 
             const scanResult = await scanIncomingFolder(incomingPath, {
               userId: settings.userId,
