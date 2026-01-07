@@ -15,32 +15,26 @@ export function getElapsedMs(): number {
 /**
  * Pino logger configuration
  * - In development: pretty-print with colors
- * - In production: logfmt format for structured logging
+ * - In production: JSON format for Railway structured logging
+ *   Railway supports @attribute:value filtering on JSON logs
+ *   See: https://docs.railway.com/guides/logs#structured-logs
  */
 export const logger = pino({
   level: process.env.LOG_LEVEL || (isDev ? "debug" : "info"),
-  formatters: {
-    level: (label) => {
-      return { level: label.toUpperCase() };
-    },
-  },
-  transport: isDev
+  // In production, use default JSON output (no transport)
+  // Railway auto-normalizes: msg -> message, level matching
+  ...(isDev
     ? {
-        target: "pino-pretty",
-        options: {
-          colorize: true,
-          translateTime: "SYS:standard",
-          ignore: "pid,hostname",
+        transport: {
+          target: "pino-pretty",
+          options: {
+            colorize: true,
+            translateTime: "SYS:standard",
+            ignore: "pid,hostname",
+          },
         },
       }
-    : {
-        target: "pino-logfmt",
-        options: {
-          flattenNestedObjects: true,
-          convertToSnakeCase: true,
-          formatTime: true,
-        },
-      },
+    : {}),
 });
 
 // Log when logger is first initialized

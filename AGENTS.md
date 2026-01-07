@@ -367,13 +367,13 @@ The application uses Pino for structured logging across all backend operations.
 | Environment | Format | Transport |
 |-------------|--------|-----------|
 | Development | Pretty-print with colors | `pino-pretty` |
-| Production | logfmt (key=value pairs) | `pino-logfmt` |
+| Production | JSON (Railway structured logs) | None (Pino default) |
 
-Production logs use logfmt format with these options:
-- `flattenNestedObjects`: Nested objects are flattened with underscore separator
-- `convertToSnakeCase`: Keys are converted to snake_case
-- `includeLevelLabel`: Level name is included (e.g., `level_label=info`)
-- `formatTime`: Timestamps are formatted as ISO 8601
+Production logs use JSON format optimized for Railway:
+- Railway auto-normalizes `msg` → `message` field
+- Supports `@attribute:value` filtering in Log Explorer
+- Log levels are colored in Railway dashboard
+- See: https://docs.railway.com/guides/logs#structured-logs
 
 ### Log Events
 

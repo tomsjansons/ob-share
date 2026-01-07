@@ -29,7 +29,7 @@ This project provides a cloud-based, containerized Obsidian installation that:
 | UI | shadcn/ui + Tailwind CSS | Component library |
 | Theming | next-themes | Dark/light mode support |
 | Process Manager | supervisord | Service orchestration |
-| Logging | Pino | Structured logging (logfmt in prod, pretty in dev) |
+| Logging | Pino | Structured logging (JSON in prod, pretty in dev) |
 | Application | Obsidian v1.7.7 | Note-taking app |
 
 ## Project Structure
