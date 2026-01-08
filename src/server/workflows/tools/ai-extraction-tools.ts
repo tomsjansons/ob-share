@@ -257,47 +257,28 @@ Respond in JSON format matching this schema:
         hasContent: !!content,
       });
 
-      // Parse the JSON response
-      let analysisResult: AudioExtractionResult;
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          analysisResult = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error("No JSON found in response");
-        }
-      } catch (parseErr) {
-        logger.warn({
-          event: "audio_extraction.parse_failed",
-          filePath: input.filePath,
-          error: parseErr instanceof Error ? parseErr.message : String(parseErr),
-          rawContent: content?.slice(0, 1000),
-        });
+      // For debugging: output raw response as JSON code block
+      const debugResponse = {
+        model,
+        originalFile: input.filePath,
+        wasConverted,
+        convertedPath: audioFilePath,
+        responseLength: content?.length ?? 0,
+        rawContent: content,
+        responseObj: response,
+      };
 
-        // Build detailed diagnostic info for troubleshooting
-        const diagnosticInfo = [
-          `Model: ${model}`,
-          `Original file: ${input.filePath}`,
-          `Was converted: ${wasConverted}`,
-          `Converted path: ${audioFilePath}`,
-          `Response length: ${content?.length ?? 0} chars`,
-          `Parse error: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
-        ].join("\n");
-
-        // Return a detailed result for debugging
-        analysisResult = {
-          speakers: [],
-          transcription: [{
-            text: content
-              ? `Raw API response:\n${content}`
-              : `No content received from API.\n\nDiagnostics:\n${diagnosticInfo}`
-          }],
-          summary: content?.slice(0, 200) || `Audio analysis failed. Check logs for details.\n\n${diagnosticInfo}`,
-          intentions: [],
-          backgroundNoises: [],
-          language: "unknown",
-        };
-      }
+      // Return debug output for testing
+      const analysisResult: AudioExtractionResult = {
+        speakers: [],
+        transcription: [{
+          text: `\`\`\`json\n${JSON.stringify(debugResponse, null, 2)}\n\`\`\``
+        }],
+        summary: `Debug output - raw API response (${content?.length ?? 0} chars)`,
+        intentions: [],
+        backgroundNoises: [],
+        language: "unknown",
+      };
 
       logger.info({
         event: "audio_extraction.complete",
