@@ -190,28 +190,67 @@ export function detectContentType(content: string): "audio" | "video" | "image" 
   const wikiLinkRegex = /!?\[\[([^\]]+)\]\]/g;
   const matches = [...body.matchAll(wikiLinkRegex)];
 
+  logger.debug({
+    event: "file-checker.detect_content_type.start",
+    bodyLength: body.length,
+    wikiLinksFound: matches.length,
+    wikiLinks: matches.map(m => m[1]),
+  });
+
   for (const match of matches) {
     const filename = match[1].toLowerCase();
     if (audioExtensions.some((ext) => filename.endsWith(ext))) {
+      logger.debug({
+        event: "file-checker.detect_content_type.result",
+        contentType: "audio",
+        matchedFile: filename,
+      });
       return "audio";
     }
     if (videoExtensions.some((ext) => filename.endsWith(ext))) {
+      logger.debug({
+        event: "file-checker.detect_content_type.result",
+        contentType: "video",
+        matchedFile: filename,
+      });
       return "video";
     }
     if (imageExtensions.some((ext) => filename.endsWith(ext))) {
+      logger.debug({
+        event: "file-checker.detect_content_type.result",
+        contentType: "image",
+        matchedFile: filename,
+      });
       return "image";
     }
     if (documentExtensions.some((ext) => filename.endsWith(ext))) {
+      logger.debug({
+        event: "file-checker.detect_content_type.result",
+        contentType: "document",
+        matchedFile: filename,
+      });
       return "document";
     }
   }
 
   // Check for URLs in the content
   const urlRegex = /https?:\/\/[^\s<>\]]+/gi;
-  if (urlRegex.test(body)) {
+  const urlMatches = body.match(urlRegex);
+  if (urlMatches && urlMatches.length > 0) {
+    logger.debug({
+      event: "file-checker.detect_content_type.result",
+      contentType: "url",
+      urlCount: urlMatches.length,
+      firstUrl: urlMatches[0],
+    });
     return "url";
   }
 
+  logger.debug({
+    event: "file-checker.detect_content_type.result",
+    contentType: "text",
+    reason: "no attachments or URLs found",
+  });
   return "text";
 }
 

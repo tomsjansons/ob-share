@@ -406,6 +406,19 @@ The application uses Pino for structured logging across all backend operations.
 - **Logging Middleware:** All tRPC procedures are wrapped with logging middleware that logs start, complete, and error events
 - **Module Loggers:** Auth and vault modules create their own child loggers with `module` context
 
+### Log Level Configuration
+
+Use the `DEBUG_LEVEL` environment variable to control log verbosity:
+
+| Value | Description |
+|-------|-------------|
+| `debug` | Verbose logging including file reads, frontmatter parsing, content detection |
+| `info` | Default - important events only |
+| `warn` | Warnings and errors only |
+| `error` | Errors only |
+
+Example: `DEBUG_LEVEL=debug pnpm dev` to enable verbose logging during development.
+
 ### Log Formats
 
 | Environment | Format | Transport |
