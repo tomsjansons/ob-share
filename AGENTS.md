@@ -856,4 +856,4 @@ The workflow updates the note file with:
 Document analysis uses OpenAI's models (configurable per-user in settings):
 - **Document Analysis Model**: Stored in `user_settings.documentAnalysisModel` (default: `gpt-4o`)
 - Supports PDF, DOC, DOCX, TXT, MD, CSV, RTF, ODT file types
-- Extracts: title, author, full text, summary, key points, sections, topics, language
+- Extracts: title, summary (meaning-focused, 2-3 sentences), key points (3-5 max)
