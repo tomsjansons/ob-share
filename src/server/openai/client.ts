@@ -206,6 +206,7 @@ export class OpenAIClient {
 
   /**
    * Analyze audio using multimodal model (GPT-4o with audio)
+   * Uses the Responses API with input_file for audio files
    */
   async analyzeAudio(
     filePath: string,
@@ -221,32 +222,54 @@ export class OpenAIClient {
     });
 
     try {
+      const openai = this.createClient();
+
       // Read and encode audio file
       const audioBuffer = await fs.readFile(filePath);
       const base64Audio = audioBuffer.toString("base64");
-      const audioFormat = this.getAudioFormat(filePath);
+      const mimeType = this.getMimeType(filePath);
+      const filename = path.basename(filePath);
 
-      // Build message with audio input
-      const messages: ChatMessage[] = [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_audio",
-              input_audio: {
-                data: base64Audio,
-                format: audioFormat,
+      logger.debug({
+        event: "openai.analyzeAudio.encoded",
+        filePath,
+        mimeType,
+        bufferSize: audioBuffer.length,
+      });
+
+      // Use the Responses API with input_file type for audio
+      const response = await openai.responses.create({
+        model,
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_file",
+                filename,
+                file_data: `data:${mimeType};base64,${base64Audio}`,
               },
-            },
-            {
-              type: "text",
-              text: prompt,
-            },
-          ],
-        },
-      ];
+              {
+                type: "input_text",
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      });
 
-      return this.chatCompletion(messages, { ...options, model });
+      logger.info({
+        event: "openai.analyzeAudio.complete",
+        filePath,
+        responseLength: response.output_text?.length ?? 0,
+      });
+
+      return {
+        content: response.output_text ?? "",
+        model,
+        usage: undefined,
+        finishReason: undefined,
+      };
     } catch (err) {
       logger.error({
         event: "openai.analyzeAudio.error",
