@@ -206,7 +206,7 @@ export class OpenAIClient {
 
   /**
    * Analyze audio using multimodal model (GPT-4o with audio)
-   * Uses the Responses API with input_file for audio files
+   * Uses the Chat Completions API with input_audio content type
    */
   async analyzeAudio(
     filePath: string,
@@ -227,48 +227,63 @@ export class OpenAIClient {
       // Read and encode audio file
       const audioBuffer = await fs.readFile(filePath);
       const base64Audio = audioBuffer.toString("base64");
-      const mimeType = this.getMimeType(filePath);
-      const filename = path.basename(filePath);
+      const audioFormat = this.getAudioFormat(filePath);
 
       logger.debug({
         event: "openai.analyzeAudio.encoded",
         filePath,
-        mimeType,
+        audioFormat,
         bufferSize: audioBuffer.length,
       });
 
-      // Use the Responses API with input_file type for audio
-      const response = await openai.responses.create({
+      // Use Chat Completions API with audio input
+      // Must use gpt-4o-audio-preview model and specify modalities
+      const response = await openai.chat.completions.create({
         model,
-        input: [
+        modalities: ["text"],
+        messages: [
           {
             role: "user",
             content: [
               {
-                type: "input_file",
-                filename,
-                file_data: `data:${mimeType};base64,${base64Audio}`,
+                type: "input_audio",
+                input_audio: {
+                  data: base64Audio,
+                  format: audioFormat,
+                },
               },
               {
-                type: "input_text",
+                type: "text",
                 text: prompt,
               },
             ],
           },
         ],
+        max_tokens: options?.maxTokens ?? 4096,
+        temperature: options?.temperature ?? 0.3,
       });
+
+      const choice = response.choices?.[0];
+      const content = choice?.message?.content ?? "";
 
       logger.info({
         event: "openai.analyzeAudio.complete",
         filePath,
-        responseLength: response.output_text?.length ?? 0,
+        responseLength: content.length,
+        finishReason: choice?.finish_reason,
       });
 
       return {
-        content: response.output_text ?? "",
-        model,
-        usage: undefined,
-        finishReason: undefined,
+        content,
+        model: response.model,
+        usage: response.usage
+          ? {
+              promptTokens: response.usage.prompt_tokens,
+              completionTokens: response.usage.completion_tokens,
+              totalTokens: response.usage.total_tokens,
+            }
+          : undefined,
+        finishReason: choice?.finish_reason,
       };
     } catch (err) {
       logger.error({
