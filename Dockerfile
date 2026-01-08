@@ -62,6 +62,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     sqlite3 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 LTS

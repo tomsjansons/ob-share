@@ -13,6 +13,7 @@ import { defineTool } from "../steps/tool-step";
 import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
 import { OpenAIClient, isValidApiKey } from "@/server/openai";
+import { prepareAudioForOpenAI, cleanupConvertedFile } from "@/server/audio";
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -173,6 +174,8 @@ export const extractAudioTool = defineTool({
   }),
   outputSchema: AudioExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<AudioExtractionResult>> => {
+    let convertedFilePath: string | null = null;
+
     try {
       context.logger.info("Extracting audio content", { filePath: input.filePath });
 
@@ -190,6 +193,19 @@ export const extractAudioTool = defineTool({
           success: false,
           error: "OpenAI API key not configured. Please add your API key in Settings.",
         };
+      }
+
+      // Prepare audio file for OpenAI API
+      // If format is not natively supported (wav/mp3), convert to WAV using FFmpeg
+      const { filePath: audioFilePath, wasConverted } = await prepareAudioForOpenAI(input.filePath);
+
+      if (wasConverted) {
+        convertedFilePath = audioFilePath;
+        logger.info({
+          event: "audio_extraction.converted",
+          originalPath: input.filePath,
+          convertedPath: audioFilePath,
+        });
       }
 
       // Create OpenAI client
@@ -219,11 +235,13 @@ Respond in JSON format matching this schema:
 
       logger.info({
         event: "audio_extraction.calling_gpt4o_audio",
-        filePath: input.filePath,
+        filePath: audioFilePath,
+        originalFilePath: input.filePath,
+        wasConverted,
         model,
       });
 
-      const response = await openai.analyzeAudio(input.filePath, analysisPrompt, {
+      const response = await openai.analyzeAudio(audioFilePath, analysisPrompt, {
         model,
         maxTokens: 4096,
         temperature: 0.3,
@@ -286,6 +304,11 @@ Respond in JSON format matching this schema:
         success: false,
         error: `Failed to extract audio: ${err instanceof Error ? err.message : String(err)}`,
       };
+    } finally {
+      // Clean up converted file if it was created
+      if (convertedFilePath) {
+        await cleanupConvertedFile(convertedFilePath);
+      }
     }
   },
 });
