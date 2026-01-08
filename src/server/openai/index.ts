@@ -11,7 +11,6 @@ export {
   DEFAULT_WHISPER_MODEL,
   DEFAULT_AUDIO_MODEL,
   DEFAULT_VISION_MODEL,
-  DEFAULT_TRANSCRIBE_DIARIZE_MODEL,
   type OpenAIConfig,
   type TranscriptionOptions,
   type TranscriptionResult,

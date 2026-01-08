@@ -16,9 +16,8 @@ const logger = baseLogger.child({ module: "openai-client" });
 
 // Default models
 export const DEFAULT_WHISPER_MODEL = "whisper-1";
-export const DEFAULT_AUDIO_MODEL = "gpt-4o-audio-preview";
+export const DEFAULT_AUDIO_MODEL = "gpt-4o-transcribe-diarize";
 export const DEFAULT_VISION_MODEL = "gpt-4o";
-export const DEFAULT_TRANSCRIBE_DIARIZE_MODEL = "gpt-4o-transcribe-diarize";
 
 /**
  * OpenAI API configuration
@@ -248,7 +247,7 @@ export class OpenAIClient {
     filePath: string,
     options?: DiarizeTranscriptionOptions
   ): Promise<DiarizedTranscriptionResult> {
-    const model = options?.model ?? DEFAULT_TRANSCRIBE_DIARIZE_MODEL;
+    const model = options?.model ?? DEFAULT_AUDIO_MODEL;
 
     logger.info({
       event: "openai.transcribeDiarize.start",

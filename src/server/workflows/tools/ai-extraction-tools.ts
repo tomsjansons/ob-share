@@ -12,7 +12,7 @@ import OpenAI from "openai";
 import { defineTool } from "../steps/tool-step";
 import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
-import { OpenAIClient, isValidApiKey, DEFAULT_TRANSCRIBE_DIARIZE_MODEL } from "@/server/openai";
+import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL } from "@/server/openai";
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -181,7 +181,7 @@ export const extractAudioTool = defineTool({
 
       // Get API key from input or environment
       const apiKey = input.openaiApiKey ?? process.env.OPENAI_API_KEY;
-      const model = input.openaiModel ?? DEFAULT_TRANSCRIBE_DIARIZE_MODEL;
+      const model = input.openaiModel ?? DEFAULT_AUDIO_MODEL;
 
       if (!isValidApiKey(apiKey)) {
         logger.warn({
