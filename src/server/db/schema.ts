@@ -104,7 +104,7 @@ export const userSettings = sqliteTable("user_settings", {
     .default("not_asked"),
   // File check interval in seconds (default: 10 seconds)
   fileCheckInterval: integer("file_check_interval").notNull().default(10),
-  // OpenAI API configuration (for audio transcription)
+  // OpenAI API configuration (for audio analysis with GPT-4o)
   openaiApiKey: text("openai_api_key"),
   openaiModel: text("openai_model").notNull().default("gpt-4o-audio-preview"),
   // Text LLM configuration (for URL summarization and text analysis)

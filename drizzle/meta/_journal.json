@@ -8,6 +8,13 @@
       "when": 1767769507769,
       "tag": "0000_romantic_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1767882520083,
+      "tag": "0001_good_kulan_gath",
+      "breakpoints": true
     }
   ]
 }

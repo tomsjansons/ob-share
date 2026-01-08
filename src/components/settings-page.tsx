@@ -667,7 +667,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="openai-model">Transcription Model</Label>
+                  <Label htmlFor="openai-model">Audio Analysis Model</Label>
                   <Input
                     id="openai-model"
                     type="text"
@@ -676,7 +676,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
                     onChange={(e) => setOpenaiModel(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Model used for audio processing. Default: gpt-4o-audio-preview (uses whisper-1 for transcription)
+                    OpenAI model for audio analysis and transcription. Default: gpt-4o-audio-preview
                   </p>
                 </div>
 
