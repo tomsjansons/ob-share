@@ -107,7 +107,8 @@ async function scanIncomingFolder(
     const entries = await fs.readdir(incomingPath, { withFileTypes: true });
 
     const allFiles = entries.filter(e => e.isFile()).map(e => e.name);
-    const mdFiles = entries.filter(e => e.isFile() && e.name.endsWith(".md")).map(e => e.name);
+    // Case-insensitive check for markdown files
+    const mdFiles = entries.filter(e => e.isFile() && e.name.toLowerCase().endsWith(".md")).map(e => e.name);
 
     logger.debug({
       event: "file-checker-job.folder_scan_result",
@@ -118,8 +119,17 @@ async function scanIncomingFolder(
       mdFiles,
     });
 
+    // Log all files found for diagnostic purposes
+    logger.info({
+      event: "file-checker-job.folder_contents",
+      incomingPath,
+      allFiles,
+      mdFilesCount: mdFiles.length,
+    });
+
     for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith(".md")) {
+      // Case-insensitive check for markdown extension
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) {
         continue;
       }
 
@@ -153,8 +163,23 @@ async function scanIncomingFolder(
         });
 
         // Check if status is "new" or ready for retry
-        const isNew = parsed.data.status === "new";
+        // Normalize status to handle whitespace/case variations
+        const rawStatus = parsed.data.status;
+        const normalizedStatus = typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : rawStatus;
+        const isNew = normalizedStatus === "new";
         const isRetryReady = isReadyForRetry(parsed.data);
+
+        // Always log status for each file at INFO level for diagnostics
+        logger.info({
+          event: "file-checker-job.file_status_check",
+          filePath,
+          rawStatus: rawStatus,
+          rawStatusType: typeof rawStatus,
+          normalizedStatus,
+          isNew,
+          isRetryReady,
+          frontmatterKeys: Object.keys(parsed.data),
+        });
 
         if (!isNew && !isRetryReady) {
           logger.debug({

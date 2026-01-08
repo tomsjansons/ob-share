@@ -160,7 +160,11 @@ export async function updateFileWithError(
  * Check if a file is ready for retry based on next-retry-at timestamp
  */
 export function isReadyForRetry(data: Record<string, unknown>): boolean {
-  if (data.status !== "retry") {
+  // Normalize status to handle whitespace/case variations
+  const rawStatus = data.status;
+  const normalizedStatus = typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : rawStatus;
+
+  if (normalizedStatus !== "retry") {
     return false;
   }
 
