@@ -391,24 +391,6 @@ function formatDocumentExtraction(result: DocumentExtractionResult): string {
     sections.push(`### ${result.title}\n`);
   }
 
-  if (result.author) {
-    sections.push(`**Author**: ${result.author}`);
-  }
-
-  if (result.documentType) {
-    sections.push(`**Document Type**: ${result.documentType}`);
-  }
-
-  if (result.pageCount) {
-    sections.push(`**Pages**: ${result.pageCount}`);
-  }
-
-  if (result.language) {
-    sections.push(`**Language**: ${result.language}`);
-  }
-
-  sections.push("");
-
   if (result.summary) {
     sections.push(`### Summary\n${result.summary}\n`);
   }
@@ -417,33 +399,6 @@ function formatDocumentExtraction(result: DocumentExtractionResult): string {
     sections.push("### Key Points");
     for (const point of result.keyPoints) {
       sections.push(`- ${point}`);
-    }
-    sections.push("");
-  }
-
-  if (result.topics && result.topics.length > 0) {
-    sections.push(`**Topics**: ${result.topics.join(", ")}\n`);
-  }
-
-  if (result.sections && result.sections.length > 0) {
-    sections.push("### Document Sections");
-    for (const section of result.sections) {
-      if (section.title) {
-        sections.push(`#### ${section.title}`);
-      }
-      sections.push(section.content.slice(0, 2000));
-      if (section.content.length > 2000) {
-        sections.push("*[Section truncated...]*");
-      }
-      sections.push("");
-    }
-  }
-
-  if (result.extractedText) {
-    sections.push("### Full Extracted Text");
-    sections.push(result.extractedText.slice(0, 10000));
-    if (result.extractedText.length > 10000) {
-      sections.push("\n*[Text truncated...]*");
     }
     sections.push("");
   }

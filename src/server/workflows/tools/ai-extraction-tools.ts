@@ -911,7 +911,7 @@ export const extractDocumentTool = defineTool({
 
         // Use OpenAI client for text analysis
         const openai = new OpenAIClient({ apiKey });
-        const analysisPrompt = `Analyze the following ${documentType} content and extract structured information:
+        const analysisPrompt = `Analyze the following ${documentType} content and extract the essential meaning:
 
 Document Content:
 ${fileContent.slice(0, 50000)}
@@ -920,24 +920,15 @@ ${fileContent.length > 50000 ? "\n[Content truncated...]" : ""}
 
 Please extract:
 1. Document title (if identifiable from content)
-2. Author (if mentioned)
-3. A comprehensive summary (2-4 paragraphs)
-4. Key points (5-10 bullet points)
-5. Document sections with their content
-6. Main topics covered
-7. Language of the document
+2. A CONCISE summary (2-3 sentences max) that captures the PURPOSE and MEANING of the document, not a description of its contents. Focus on: What is this about? Why does it matter? What's the main takeaway?
+3. Key points (3-5 bullet points max) - only the most important actionable or memorable insights
 
 Respond in JSON format matching this schema:
 {
   "title": "string (optional)",
-  "author": "string (optional)",
-  "extractedText": "string - the original text (first 10000 chars)",
-  "summary": "string - comprehensive summary",
+  "summary": "string - concise summary capturing meaning and purpose (2-3 sentences)",
   "keyPoints": ["string - key point 1", "string - key point 2", ...],
-  "sections": [{"title": "string (optional)", "content": "string"}],
-  "documentType": "string - type of document",
-  "language": "string (optional)",
-  "topics": ["string - topic 1", "string - topic 2", ...]
+  "documentType": "string - type of document"
 }`;
 
         const response = await openai.chatCompletion(
@@ -989,31 +980,19 @@ Respond in JSON format matching this schema:
       const openai = new OpenAI({ apiKey });
 
       // Use the Responses API with file input
-      const analysisPrompt = `Analyze this document thoroughly and extract structured information.
+      const analysisPrompt = `Analyze this document and extract its essential meaning.
 
 Please extract:
 1. Document title (if identifiable)
-2. Author (if mentioned)
-3. Complete text content - extract ALL readable text from the document
-4. A comprehensive summary (2-4 paragraphs)
-5. Key points (5-10 bullet points)
-6. Document sections with their content
-7. Main topics covered
-8. Language of the document
-9. Page count if determinable
+2. A CONCISE summary (2-3 sentences max) that captures the PURPOSE and MEANING of the document, not a description of its contents. Focus on: What is this about? Why does it matter? What's the main takeaway?
+3. Key points (3-5 bullet points max) - only the most important actionable or memorable insights
 
 Respond in JSON format matching this schema:
 {
   "title": "string (optional)",
-  "author": "string (optional)",
-  "pageCount": number (optional),
-  "extractedText": "string - full extracted text",
-  "summary": "string - comprehensive summary",
+  "summary": "string - concise summary capturing meaning and purpose (2-3 sentences)",
   "keyPoints": ["string - key point 1", "string - key point 2", ...],
-  "sections": [{"title": "string (optional)", "content": "string"}],
-  "documentType": "string - type of document",
-  "language": "string (optional)",
-  "topics": ["string - topic 1", "string - topic 2", ...]
+  "documentType": "string - type of document"
 }`;
 
       logger.info({

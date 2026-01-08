@@ -378,7 +378,7 @@ ob-share includes an automated system that periodically scans your incoming fold
 | **Video** | Speakers, transcription, scenes, visible texts, locations, actions, objects |
 | **Image** | Description, objects, people, visible text, diagrams, technical info, location |
 | **URL** | Title, summary, key points, main content, author, publish date |
-| **Document** | Title, author, extracted text, summary, key points, sections, topics, language |
+| **Document** | Title, summary (meaning-focused, 2-3 sentences), key points (3-5 max) |
 
 **Extracted information format:**
 - Extracted content is added at the top of the note under `## Extracted [Type] Content`
