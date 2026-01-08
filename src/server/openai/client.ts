@@ -240,11 +240,11 @@ export class OpenAIClient {
         throw new Error("Audio file is empty");
       }
 
-      // Use direct fetch to match OpenAI docs format
-      // Only request text output since we don't need audio response
+      // Use direct fetch to match OpenAI docs format exactly
       const requestBody = {
         model,
-        modalities: ["text"],
+        modalities: ["text", "audio"],
+        audio: { voice: "alloy", format: "wav" },
         messages: [
           {
             role: "user",

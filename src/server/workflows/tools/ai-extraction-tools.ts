@@ -271,13 +271,28 @@ Respond in JSON format matching this schema:
           event: "audio_extraction.parse_failed",
           filePath: input.filePath,
           error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+          rawContent: content?.slice(0, 1000),
         });
 
-        // Return a basic result with the raw content as transcription
+        // Build detailed diagnostic info for troubleshooting
+        const diagnosticInfo = [
+          `Model: ${model}`,
+          `Original file: ${input.filePath}`,
+          `Was converted: ${wasConverted}`,
+          `Converted path: ${audioFilePath}`,
+          `Response length: ${content?.length ?? 0} chars`,
+          `Parse error: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
+        ].join("\n");
+
+        // Return a detailed result for debugging
         analysisResult = {
           speakers: [],
-          transcription: [{ text: content || "Unable to transcribe audio" }],
-          summary: content?.slice(0, 200) || "Audio analysis failed",
+          transcription: [{
+            text: content
+              ? `Raw API response:\n${content}`
+              : `No content received from API.\n\nDiagnostics:\n${diagnosticInfo}`
+          }],
+          summary: content?.slice(0, 200) || `Audio analysis failed. Check logs for details.\n\n${diagnosticInfo}`,
           intentions: [],
           backgroundNoises: [],
           language: "unknown",
@@ -296,15 +311,28 @@ Respond in JSON format matching this schema:
         output: analysisResult,
       };
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorStack = err instanceof Error ? err.stack : undefined;
+
       logger.error({
         event: "audio_extraction.error",
         filePath: input.filePath,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMsg,
+        stack: errorStack,
+        wasConverted: convertedFilePath !== null,
       });
+
+      // Build detailed error message for the MD file
+      const errorDetails = [
+        `Error: ${errorMsg}`,
+        `Original file: ${input.filePath}`,
+        `Was converted: ${convertedFilePath !== null}`,
+        convertedFilePath ? `Converted path: ${convertedFilePath}` : null,
+      ].filter(Boolean).join("\n");
 
       return {
         success: false,
-        error: `Failed to extract audio: ${err instanceof Error ? err.message : String(err)}`,
+        error: `Failed to extract audio:\n\n${errorDetails}`,
       };
     } finally {
       // Clean up converted file if it was created
