@@ -12,8 +12,7 @@ import OpenAI from "openai";
 import { defineTool } from "../steps/tool-step";
 import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
-import { OpenAIClient, isValidApiKey } from "@/server/openai";
-import { prepareAudioForOpenAI, cleanupConvertedFile } from "@/server/audio";
+import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL } from "@/server/openai";
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -141,29 +140,30 @@ export type UrlExtractionResult = z.infer<typeof UrlExtractionResultSchema>;
 export type DocumentExtractionResult = z.infer<typeof DocumentExtractionResultSchema>;
 
 /**
- * Extract information from audio files using GPT-4o audio model
+ * Extract information from audio files using gpt-4o-transcribe-diarize model
+ * Uses the OpenAI audio transcriptions endpoint with diarization support
  */
 export const extractAudioTool = defineTool({
   name: "extract-audio",
-  description: "Extract speakers, transcription, intentions, and background noises from an audio file using GPT-4o audio",
+  description: "Extract speakers, transcription, and structured information from an audio file using gpt-4o-transcribe-diarize",
   category: "ai-extraction",
   parameters: [
     {
       name: "filePath",
       type: "string",
-      description: "Path to the audio file",
+      description: "Path to the audio file (supports webm, mp3, wav, ogg, flac, mp4, mpeg, m4a)",
       required: true,
     },
     {
       name: "openaiApiKey",
       type: "string",
-      description: "OpenAI API key for audio analysis",
+      description: "OpenAI API key for audio transcription",
       required: false,
     },
     {
       name: "openaiModel",
       type: "string",
-      description: "OpenAI model to use (default: gpt-4o-audio-preview)",
+      description: "OpenAI model to use (default: gpt-4o-transcribe-diarize)",
       required: false,
     },
   ],
@@ -174,16 +174,14 @@ export const extractAudioTool = defineTool({
   }),
   outputSchema: AudioExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<AudioExtractionResult>> => {
-    let convertedFilePath: string | null = null;
     let audioFileSize: number | null = null;
-    let convertedFileSize: number | null = null;
 
     try {
       context.logger.info("Extracting audio content", { filePath: input.filePath });
 
       // Get API key from input or environment
       const apiKey = input.openaiApiKey ?? process.env.OPENAI_API_KEY;
-      const model = input.openaiModel ?? "gpt-4o-audio-preview";
+      const model = input.openaiModel ?? DEFAULT_AUDIO_MODEL;
 
       if (!isValidApiKey(apiKey)) {
         logger.warn({
@@ -197,148 +195,84 @@ export const extractAudioTool = defineTool({
         };
       }
 
-      // Check original file size
-      const originalStats = await fs.stat(input.filePath);
-      audioFileSize = originalStats.size;
+      // Check file size
+      const fileStats = await fs.stat(input.filePath);
+      audioFileSize = fileStats.size;
 
-      // Prepare audio file for OpenAI API
-      // If format is not natively supported (wav/mp3), convert to WAV using FFmpeg
-      const { filePath: audioFilePath, wasConverted } = await prepareAudioForOpenAI(input.filePath);
+      const originalExt = path.extname(input.filePath).toLowerCase();
 
-      if (wasConverted) {
-        convertedFilePath = audioFilePath;
-        const convertedStats = await fs.stat(audioFilePath);
-        convertedFileSize = convertedStats.size;
-        logger.info({
-          event: "audio_extraction.converted",
-          originalPath: input.filePath,
-          convertedPath: audioFilePath,
-          originalSize: audioFileSize,
-          convertedSize: convertedFileSize,
-        });
+      // Validate file format - the transcriptions endpoint supports these formats:
+      // flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, or webm
+      const supportedFormats = [".flac", ".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".ogg", ".wav", ".webm"];
+      if (!supportedFormats.includes(originalExt)) {
+        return {
+          success: false,
+          error: `Unsupported audio format: ${originalExt}. Supported formats: ${supportedFormats.join(", ")}`,
+        };
       }
 
       // Create OpenAI client
-      const openai = new OpenAIClient({ apiKey, model });
-
-      // Use GPT-4o audio to analyze the audio directly
-      const analysisPrompt = `Listen to this audio and extract structured information. Please provide:
-
-1. Identify different speakers if multiple are present (give them IDs like "Speaker 1", "Speaker 2")
-2. Provide a complete transcription, broken down by speaker if possible
-3. Summarize the main content
-4. List any apparent intentions or purposes of the conversation/recording
-5. Note any background noises or environmental sounds you hear
-6. Describe the overall mood or tone
-7. Identify the language being spoken
-
-Respond in JSON format matching this schema:
-{
-  "speakers": [{"id": "string", "name": "string (optional)", "description": "string (optional)"}],
-  "transcription": [{"speaker": "string (optional)", "text": "string", "timestamp": "string (optional)"}],
-  "summary": "string",
-  "intentions": ["string"],
-  "backgroundNoises": ["string"],
-  "mood": "string (optional)",
-  "language": "string"
-}`;
+      const openai = new OpenAIClient({ apiKey });
 
       logger.info({
-        event: "audio_extraction.calling_gpt4o_audio",
-        filePath: audioFilePath,
-        originalFilePath: input.filePath,
-        wasConverted,
+        event: "audio_extraction.calling_transcribe_diarize",
+        filePath: input.filePath,
         model,
+        fileSize: audioFileSize,
+        format: originalExt,
       });
 
-      const response = await openai.analyzeAudio(audioFilePath, analysisPrompt, {
+      // Use the transcription endpoint with diarization
+      const response = await openai.transcribeWithDiarization(input.filePath, {
         model,
-        maxTokens: 4096,
-        temperature: 0.3,
       });
-
-      const content = response.content;
-      const originalExt = path.extname(input.filePath).toLowerCase();
 
       logger.info({
         event: "audio_extraction.response_received",
         filePath: input.filePath,
-        responseLength: content?.length ?? 0,
-        contentPreview: content?.slice(0, 500) ?? "EMPTY",
-        hasContent: !!content,
+        duration: response.duration,
+        segmentCount: response.segments?.length ?? 0,
+        textLength: response.text?.length ?? 0,
       });
 
-      // For debugging: output comprehensive diagnostic info
-      const debugResponse = {
-        // File info
-        originalFile: input.filePath,
-        originalFormat: originalExt,
-        originalSizeBytes: audioFileSize,
-        originalSizeKB: audioFileSize ? Math.round(audioFileSize / 1024) : null,
-        // Conversion info
-        wasConverted,
-        convertedPath: wasConverted ? audioFilePath : null,
-        convertedFormat: wasConverted ? ".wav" : originalExt,
-        convertedSizeBytes: convertedFileSize,
-        convertedSizeKB: convertedFileSize ? Math.round(convertedFileSize / 1024) : null,
-        // API request info
-        model,
-        apiEndpoint: "https://api.openai.com/v1/chat/completions",
-        requestModalities: ["text", "audio"],
-        requestAudioConfig: { voice: "alloy", format: "wav" },
-        // Response info
-        responseLength: content?.length ?? 0,
-        finishReason: response.finishReason,
-        usageTokens: response.usage,
-        modelUsed: response.model,
-        // Content preview (first 1000 chars)
-        contentPreview: content?.slice(0, 1000) ?? "EMPTY_RESPONSE",
-        // Full raw content
-        rawContent: content,
-      };
+      // Extract unique speakers from segments
+      const speakerSet = new Set<string>();
+      for (const segment of response.segments || []) {
+        if (segment.speaker) {
+          speakerSet.add(segment.speaker);
+        }
+      }
 
-      // Build human-readable summary for the MD file
-      const summaryLines = [
-        `**Audio Extraction Debug Report**`,
-        ``,
-        `**Input File:** \`${input.filePath}\``,
-        `**Format:** ${originalExt} (${audioFileSize ? `${Math.round(audioFileSize / 1024)} KB` : 'unknown size'})`,
-        wasConverted ? `**Converted:** Yes → WAV (${convertedFileSize ? `${Math.round(convertedFileSize / 1024)} KB` : 'unknown size'})` : `**Converted:** No (already supported format)`,
-        ``,
-        `**API Request:**`,
-        `- Model: ${model}`,
-        `- Modalities: text, audio`,
-        `- Audio output config: voice=alloy, format=wav`,
-        ``,
-        `**API Response:**`,
-        `- Model used: ${response.model}`,
-        `- Finish reason: ${response.finishReason ?? 'unknown'}`,
-        `- Response length: ${content?.length ?? 0} chars`,
-        response.usage ? `- Tokens: prompt=${response.usage.promptTokens}, completion=${response.usage.completionTokens}, total=${response.usage.totalTokens}` : `- Tokens: not reported`,
-        ``,
-        `**Response Content Preview:**`,
-        content ? `\`\`\`\n${content.slice(0, 500)}${content.length > 500 ? '...' : ''}\n\`\`\`` : `_(empty response)_`,
-        ``,
-        `**Full Debug JSON:**`,
-      ].join('\n');
+      // Build speakers array
+      const speakers = Array.from(speakerSet).map((speaker) => ({
+        id: speaker,
+        name: speaker,
+      }));
 
-      // Return debug output for testing
+      // Build transcription array from segments
+      const transcription = (response.segments || []).map((segment) => ({
+        speaker: segment.speaker,
+        text: segment.text,
+        timestamp: `${segment.start.toFixed(1)}s - ${segment.end.toFixed(1)}s`,
+      }));
+
+      // Build the result
       const analysisResult: AudioExtractionResult = {
-        speakers: [],
-        transcription: [{
-          text: `${summaryLines}\n\`\`\`json\n${JSON.stringify(debugResponse, null, 2)}\n\`\`\``
-        }],
-        summary: `Debug: ${originalExt} file (${audioFileSize ? Math.round(audioFileSize / 1024) : '?'} KB) → API response ${content?.length ?? 0} chars, finish: ${response.finishReason ?? 'unknown'}`,
+        speakers,
+        transcription,
+        summary: response.text || "",
         intentions: [],
         backgroundNoises: [],
-        language: "unknown",
+        language: undefined,
+        mood: undefined,
       };
 
       logger.info({
         event: "audio_extraction.complete",
         filePath: input.filePath,
-        speakersCount: analysisResult.speakers?.length ?? 0,
-        transcriptionSegments: analysisResult.transcription?.length ?? 0,
+        speakersCount: speakers.length,
+        transcriptionSegments: transcription.length,
+        duration: response.duration,
       });
 
       return {
@@ -355,41 +289,24 @@ Respond in JSON format matching this schema:
         filePath: input.filePath,
         error: errorMsg,
         stack: errorStack,
-        wasConverted: convertedFilePath !== null,
-        originalSize: audioFileSize,
-        convertedSize: convertedFileSize,
+        fileSize: audioFileSize,
       });
 
-      // Build detailed error message for the MD file
+      // Build detailed error message
       const errorLines = [
-        `**Audio Extraction Error Report**`,
+        `**Audio Extraction Error**`,
         ``,
         `**Error:** ${errorMsg}`,
         ``,
         `**Input File:** \`${input.filePath}\``,
         `**Format:** ${originalExt}`,
-        audioFileSize ? `**Original Size:** ${Math.round(audioFileSize / 1024)} KB (${audioFileSize} bytes)` : `**Original Size:** unknown`,
-        ``,
-        `**Conversion Status:**`,
-        convertedFilePath ? `- Converted: Yes` : `- Converted: No`,
-        convertedFilePath ? `- Converted path: \`${convertedFilePath}\`` : null,
-        convertedFileSize ? `- Converted size: ${Math.round(convertedFileSize / 1024)} KB (${convertedFileSize} bytes)` : null,
-        ``,
-        `**Stack Trace:**`,
-        `\`\`\``,
-        errorStack ?? 'No stack trace available',
-        `\`\`\``,
-      ].filter(Boolean).join("\n");
+        audioFileSize ? `**File Size:** ${Math.round(audioFileSize / 1024)} KB` : `**File Size:** unknown`,
+      ].join("\n");
 
       return {
         success: false,
         error: `Failed to extract audio:\n\n${errorLines}`,
       };
-    } finally {
-      // Clean up converted file if it was created
-      if (convertedFilePath) {
-        await cleanupConvertedFile(convertedFilePath);
-      }
     }
   },
 });
