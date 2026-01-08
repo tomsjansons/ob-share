@@ -175,6 +175,8 @@ export const extractAudioTool = defineTool({
   outputSchema: AudioExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<AudioExtractionResult>> => {
     let convertedFilePath: string | null = null;
+    let audioFileSize: number | null = null;
+    let convertedFileSize: number | null = null;
 
     try {
       context.logger.info("Extracting audio content", { filePath: input.filePath });
@@ -195,16 +197,24 @@ export const extractAudioTool = defineTool({
         };
       }
 
+      // Check original file size
+      const originalStats = await fs.stat(input.filePath);
+      audioFileSize = originalStats.size;
+
       // Prepare audio file for OpenAI API
       // If format is not natively supported (wav/mp3), convert to WAV using FFmpeg
       const { filePath: audioFilePath, wasConverted } = await prepareAudioForOpenAI(input.filePath);
 
       if (wasConverted) {
         convertedFilePath = audioFilePath;
+        const convertedStats = await fs.stat(audioFilePath);
+        convertedFileSize = convertedStats.size;
         logger.info({
           event: "audio_extraction.converted",
           originalPath: input.filePath,
           convertedPath: audioFilePath,
+          originalSize: audioFileSize,
+          convertedSize: convertedFileSize,
         });
       }
 
@@ -248,6 +258,7 @@ Respond in JSON format matching this schema:
       });
 
       const content = response.content;
+      const originalExt = path.extname(input.filePath).toLowerCase();
 
       logger.info({
         event: "audio_extraction.response_received",
@@ -257,24 +268,67 @@ Respond in JSON format matching this schema:
         hasContent: !!content,
       });
 
-      // For debugging: output raw response as JSON code block
+      // For debugging: output comprehensive diagnostic info
       const debugResponse = {
-        model,
+        // File info
         originalFile: input.filePath,
+        originalFormat: originalExt,
+        originalSizeBytes: audioFileSize,
+        originalSizeKB: audioFileSize ? Math.round(audioFileSize / 1024) : null,
+        // Conversion info
         wasConverted,
-        convertedPath: audioFilePath,
+        convertedPath: wasConverted ? audioFilePath : null,
+        convertedFormat: wasConverted ? ".wav" : originalExt,
+        convertedSizeBytes: convertedFileSize,
+        convertedSizeKB: convertedFileSize ? Math.round(convertedFileSize / 1024) : null,
+        // API request info
+        model,
+        apiEndpoint: "https://api.openai.com/v1/chat/completions",
+        requestModalities: ["text", "audio"],
+        requestAudioConfig: { voice: "alloy", format: "wav" },
+        // Response info
         responseLength: content?.length ?? 0,
+        finishReason: response.finishReason,
+        usageTokens: response.usage,
+        modelUsed: response.model,
+        // Content preview (first 1000 chars)
+        contentPreview: content?.slice(0, 1000) ?? "EMPTY_RESPONSE",
+        // Full raw content
         rawContent: content,
-        responseObj: response,
       };
+
+      // Build human-readable summary for the MD file
+      const summaryLines = [
+        `**Audio Extraction Debug Report**`,
+        ``,
+        `**Input File:** \`${input.filePath}\``,
+        `**Format:** ${originalExt} (${audioFileSize ? `${Math.round(audioFileSize / 1024)} KB` : 'unknown size'})`,
+        wasConverted ? `**Converted:** Yes → WAV (${convertedFileSize ? `${Math.round(convertedFileSize / 1024)} KB` : 'unknown size'})` : `**Converted:** No (already supported format)`,
+        ``,
+        `**API Request:**`,
+        `- Model: ${model}`,
+        `- Modalities: text, audio`,
+        `- Audio output config: voice=alloy, format=wav`,
+        ``,
+        `**API Response:**`,
+        `- Model used: ${response.model}`,
+        `- Finish reason: ${response.finishReason ?? 'unknown'}`,
+        `- Response length: ${content?.length ?? 0} chars`,
+        response.usage ? `- Tokens: prompt=${response.usage.promptTokens}, completion=${response.usage.completionTokens}, total=${response.usage.totalTokens}` : `- Tokens: not reported`,
+        ``,
+        `**Response Content Preview:**`,
+        content ? `\`\`\`\n${content.slice(0, 500)}${content.length > 500 ? '...' : ''}\n\`\`\`` : `_(empty response)_`,
+        ``,
+        `**Full Debug JSON:**`,
+      ].join('\n');
 
       // Return debug output for testing
       const analysisResult: AudioExtractionResult = {
         speakers: [],
         transcription: [{
-          text: `\`\`\`json\n${JSON.stringify(debugResponse, null, 2)}\n\`\`\``
+          text: `${summaryLines}\n\`\`\`json\n${JSON.stringify(debugResponse, null, 2)}\n\`\`\``
         }],
-        summary: `Debug output - raw API response (${content?.length ?? 0} chars)`,
+        summary: `Debug: ${originalExt} file (${audioFileSize ? Math.round(audioFileSize / 1024) : '?'} KB) → API response ${content?.length ?? 0} chars, finish: ${response.finishReason ?? 'unknown'}`,
         intentions: [],
         backgroundNoises: [],
         language: "unknown",
@@ -294,6 +348,7 @@ Respond in JSON format matching this schema:
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       const errorStack = err instanceof Error ? err.stack : undefined;
+      const originalExt = path.extname(input.filePath).toLowerCase();
 
       logger.error({
         event: "audio_extraction.error",
@@ -301,19 +356,34 @@ Respond in JSON format matching this schema:
         error: errorMsg,
         stack: errorStack,
         wasConverted: convertedFilePath !== null,
+        originalSize: audioFileSize,
+        convertedSize: convertedFileSize,
       });
 
       // Build detailed error message for the MD file
-      const errorDetails = [
-        `Error: ${errorMsg}`,
-        `Original file: ${input.filePath}`,
-        `Was converted: ${convertedFilePath !== null}`,
-        convertedFilePath ? `Converted path: ${convertedFilePath}` : null,
+      const errorLines = [
+        `**Audio Extraction Error Report**`,
+        ``,
+        `**Error:** ${errorMsg}`,
+        ``,
+        `**Input File:** \`${input.filePath}\``,
+        `**Format:** ${originalExt}`,
+        audioFileSize ? `**Original Size:** ${Math.round(audioFileSize / 1024)} KB (${audioFileSize} bytes)` : `**Original Size:** unknown`,
+        ``,
+        `**Conversion Status:**`,
+        convertedFilePath ? `- Converted: Yes` : `- Converted: No`,
+        convertedFilePath ? `- Converted path: \`${convertedFilePath}\`` : null,
+        convertedFileSize ? `- Converted size: ${Math.round(convertedFileSize / 1024)} KB (${convertedFileSize} bytes)` : null,
+        ``,
+        `**Stack Trace:**`,
+        `\`\`\``,
+        errorStack ?? 'No stack trace available',
+        `\`\`\``,
       ].filter(Boolean).join("\n");
 
       return {
         success: false,
-        error: `Failed to extract audio:\n\n${errorDetails}`,
+        error: `Failed to extract audio:\n\n${errorLines}`,
       };
     } finally {
       // Clean up converted file if it was created
