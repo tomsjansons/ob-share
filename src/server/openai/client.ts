@@ -18,6 +18,7 @@ const logger = baseLogger.child({ module: "openai-client" });
 export const DEFAULT_WHISPER_MODEL = "whisper-1";
 export const DEFAULT_AUDIO_MODEL = "gpt-4o-audio-preview";
 export const DEFAULT_VISION_MODEL = "gpt-4o";
+export const DEFAULT_TRANSCRIBE_DIARIZE_MODEL = "gpt-4o-transcribe-diarize";
 
 /**
  * OpenAI API configuration
@@ -54,6 +55,41 @@ export interface TranscriptionResult {
     end: number;
     text: string;
   }>;
+}
+
+/**
+ * Diarized transcription segment with speaker information
+ */
+export interface DiarizedSegment {
+  type: string;
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  speaker: string;
+}
+
+/**
+ * Diarized transcription result from gpt-4o-transcribe-diarize
+ */
+export interface DiarizedTranscriptionResult {
+  task: string;
+  duration: number;
+  text: string;
+  segments: DiarizedSegment[];
+  usage?: {
+    type: string;
+    seconds: number;
+  };
+}
+
+/**
+ * Diarization transcription options
+ */
+export interface DiarizeTranscriptionOptions {
+  model?: string;
+  language?: string;
+  chunkingStrategy?: "auto" | { type: "server_vad"; [key: string]: unknown };
 }
 
 /**
@@ -197,6 +233,82 @@ export class OpenAIClient {
     } catch (err) {
       logger.error({
         event: "openai.transcribe.error",
+        filePath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+  }
+
+  /**
+   * Transcribe audio with diarization using gpt-4o-transcribe-diarize
+   * Uses the official OpenAI audio transcriptions endpoint with diarized_json response format
+   */
+  async transcribeWithDiarization(
+    filePath: string,
+    options?: DiarizeTranscriptionOptions
+  ): Promise<DiarizedTranscriptionResult> {
+    const model = options?.model ?? DEFAULT_TRANSCRIBE_DIARIZE_MODEL;
+
+    logger.info({
+      event: "openai.transcribeDiarize.start",
+      filePath,
+      model,
+    });
+
+    try {
+      const openai = this.createClient();
+
+      // Build form data for the API request
+      // The transcriptions.create method doesn't support diarized_json yet,
+      // so we use the raw API via fetch
+      const formData = new FormData();
+      const fileBuffer = await fs.readFile(filePath);
+      const fileName = path.basename(filePath);
+      const blob = new Blob([fileBuffer], { type: this.getMimeType(filePath) });
+      formData.append("file", blob, fileName);
+      formData.append("model", model);
+      formData.append("response_format", "diarized_json");
+      formData.append("chunking_strategy", "auto");
+
+      if (options?.language) {
+        formData.append("language", options.language);
+      }
+
+      logger.info({
+        event: "openai.transcribeDiarize.request",
+        filePath,
+        model,
+        fileName,
+      });
+
+      const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.config.apiKey}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
+      }
+
+      const data = await response.json() as DiarizedTranscriptionResult;
+
+      logger.info({
+        event: "openai.transcribeDiarize.complete",
+        filePath,
+        duration: data.duration,
+        segmentCount: data.segments?.length ?? 0,
+        textLength: data.text?.length ?? 0,
+      });
+
+      return data;
+    } catch (err) {
+      logger.error({
+        event: "openai.transcribeDiarize.error",
         filePath,
         error: err instanceof Error ? err.message : String(err),
       });
