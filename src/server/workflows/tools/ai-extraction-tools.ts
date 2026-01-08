@@ -253,6 +253,8 @@ Respond in JSON format matching this schema:
         event: "audio_extraction.response_received",
         filePath: input.filePath,
         responseLength: content?.length ?? 0,
+        contentPreview: content?.slice(0, 500) ?? "EMPTY",
+        hasContent: !!content,
       });
 
       // Parse the JSON response

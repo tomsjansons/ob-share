@@ -240,11 +240,11 @@ export class OpenAIClient {
         throw new Error("Audio file is empty");
       }
 
-      // Use direct fetch to match OpenAI docs format exactly
+      // Use direct fetch to match OpenAI docs format
+      // Only request text output since we don't need audio response
       const requestBody = {
         model,
-        modalities: ["text", "audio"],
-        audio: { voice: "alloy", format: "wav" },
+        modalities: ["text"],
         messages: [
           {
             role: "user",
@@ -288,6 +288,23 @@ export class OpenAIClient {
 
       const data = await response.json();
       const choice = data.choices?.[0];
+
+      // Log the full response structure for debugging
+      logger.info({
+        event: "openai.analyzeAudio.rawResponse",
+        filePath,
+        hasChoices: !!data.choices,
+        choiceCount: data.choices?.length ?? 0,
+        messageKeys: choice?.message ? Object.keys(choice.message) : [],
+        hasContent: !!choice?.message?.content,
+        hasAudio: !!choice?.message?.audio,
+        contentType: typeof choice?.message?.content,
+        contentPreview: typeof choice?.message?.content === 'string'
+          ? choice.message.content.slice(0, 300)
+          : JSON.stringify(choice?.message?.content)?.slice(0, 300),
+      });
+
+      // Content might be in different places depending on the response
       const content = choice?.message?.content ?? "";
 
       logger.info({
