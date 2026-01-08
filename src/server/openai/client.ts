@@ -206,7 +206,7 @@ export class OpenAIClient {
 
   /**
    * Analyze audio using multimodal model (GPT-4o with audio)
-   * Uses the Chat Completions API with input_audio content type
+   * Uses direct fetch to Chat Completions API with input_audio content type
    */
   async analyzeAudio(
     filePath: string,
@@ -222,29 +222,34 @@ export class OpenAIClient {
     });
 
     try {
-      const openai = this.createClient();
-
       // Read and encode audio file
       const audioBuffer = await fs.readFile(filePath);
       const base64Audio = audioBuffer.toString("base64");
       const audioFormat = this.getAudioFormat(filePath);
 
-      logger.debug({
+      logger.info({
         event: "openai.analyzeAudio.encoded",
         filePath,
         audioFormat,
         bufferSize: audioBuffer.length,
+        base64Length: base64Audio.length,
       });
 
-      // Use Chat Completions API with audio input
-      // Must use gpt-4o-audio-preview model and specify modalities
-      const response = await openai.chat.completions.create({
+      // Check if audio data is valid
+      if (audioBuffer.length === 0) {
+        throw new Error("Audio file is empty");
+      }
+
+      // Use direct fetch to match OpenAI docs format exactly
+      const requestBody = {
         model,
-        modalities: ["text"],
+        modalities: ["text", "audio"],
+        audio: { voice: "alloy", format: "wav" },
         messages: [
           {
             role: "user",
             content: [
+              { type: "text", text: prompt },
               {
                 type: "input_audio",
                 input_audio: {
@@ -252,18 +257,37 @@ export class OpenAIClient {
                   format: audioFormat,
                 },
               },
-              {
-                type: "text",
-                text: prompt,
-              },
             ],
           },
         ],
         max_tokens: options?.maxTokens ?? 4096,
         temperature: options?.temperature ?? 0.3,
+      };
+
+      logger.info({
+        event: "openai.analyzeAudio.request",
+        model,
+        audioFormat,
+        hasAudioData: base64Audio.length > 0,
+        messageContentTypes: requestBody.messages[0].content.map(c => c.type),
       });
 
-      const choice = response.choices?.[0];
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
+      }
+
+      const data = await response.json();
+      const choice = data.choices?.[0];
       const content = choice?.message?.content ?? "";
 
       logger.info({
@@ -275,12 +299,12 @@ export class OpenAIClient {
 
       return {
         content,
-        model: response.model,
-        usage: response.usage
+        model: data.model,
+        usage: data.usage
           ? {
-              promptTokens: response.usage.prompt_tokens,
-              completionTokens: response.usage.completion_tokens,
-              totalTokens: response.usage.total_tokens,
+              promptTokens: data.usage.prompt_tokens,
+              completionTokens: data.usage.completion_tokens,
+              totalTokens: data.usage.total_tokens,
             }
           : undefined,
         finishReason: choice?.finish_reason,

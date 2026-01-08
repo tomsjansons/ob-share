@@ -72,9 +72,9 @@ export async function convertToWav(inputPath: string): Promise<string> {
     // -y: overwrite output file without asking
     // -i: input file
     // -acodec pcm_s16le: use 16-bit PCM codec (standard WAV)
-    // -ar 16000: sample rate 16kHz (good for speech recognition)
+    // -ar 24000: sample rate 24kHz (OpenAI recommended for audio input)
     // -ac 1: mono channel
-    const command = `ffmpeg -y -i "${inputPath}" -acodec pcm_s16le -ar 16000 -ac 1 "${outputPath}"`;
+    const command = `ffmpeg -y -i "${inputPath}" -acodec pcm_s16le -ar 24000 -ac 1 "${outputPath}"`;
 
     logger.debug({
       event: "audio_convert.executing",
