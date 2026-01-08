@@ -140,11 +140,11 @@ export type UrlExtractionResult = z.infer<typeof UrlExtractionResultSchema>;
 export type DocumentExtractionResult = z.infer<typeof DocumentExtractionResultSchema>;
 
 /**
- * Extract information from audio files
+ * Extract information from audio files using GPT-4o audio model
  */
 export const extractAudioTool = defineTool({
   name: "extract-audio",
-  description: "Extract speakers, transcription, intentions, and background noises from an audio file",
+  description: "Extract speakers, transcription, intentions, and background noises from an audio file using GPT-4o audio",
   category: "ai-extraction",
   parameters: [
     {
@@ -156,13 +156,13 @@ export const extractAudioTool = defineTool({
     {
       name: "openaiApiKey",
       type: "string",
-      description: "OpenAI API key for transcription",
+      description: "OpenAI API key for audio analysis",
       required: false,
     },
     {
       name: "openaiModel",
       type: "string",
-      description: "OpenAI model to use (default: whisper-1)",
+      description: "OpenAI model to use (default: gpt-4o-audio-preview)",
       required: false,
     },
   ],
@@ -178,7 +178,7 @@ export const extractAudioTool = defineTool({
 
       // Get API key from input or environment
       const apiKey = input.openaiApiKey ?? process.env.OPENAI_API_KEY;
-      const model = input.openaiModel ?? "whisper-1";
+      const model = input.openaiModel ?? "gpt-4o-audio-preview";
 
       if (!isValidApiKey(apiKey)) {
         logger.warn({
@@ -195,31 +195,16 @@ export const extractAudioTool = defineTool({
       // Create OpenAI client
       const openai = new OpenAIClient({ apiKey, model });
 
-      // Transcribe the audio file
-      const transcriptionResult = await openai.transcribe(input.filePath, {
-        model,
-        responseFormat: "verbose_json",
-      });
+      // Use GPT-4o audio to analyze the audio directly
+      const analysisPrompt = `Listen to this audio and extract structured information. Please provide:
 
-      const transcriptionText = transcriptionResult.text;
-
-      // Now use Claude to analyze the transcription for speakers, intentions, etc.
-      const anthropicKey = process.env.ANTHROPIC_API_KEY;
-      let analysisResult: AudioExtractionResult;
-
-      if (anthropicKey) {
-        const analysisPrompt = `Analyze the following audio transcription and extract structured information:
-
-Transcription:
-${transcriptionText}
-
-Please provide:
 1. Identify different speakers if multiple are present (give them IDs like "Speaker 1", "Speaker 2")
-2. Break down the transcription by speaker if possible
+2. Provide a complete transcription, broken down by speaker if possible
 3. Summarize the main content
-4. List any apparent intentions or purposes of the conversation
-5. Note any mentioned background noises or audio elements
-6. Identify the language
+4. List any apparent intentions or purposes of the conversation/recording
+5. Note any background noises or environmental sounds you hear
+6. Describe the overall mood or tone
+7. Identify the language being spoken
 
 Respond in JSON format matching this schema:
 {
@@ -232,66 +217,71 @@ Respond in JSON format matching this schema:
   "language": "string"
 }`;
 
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 4096,
-            messages: [{ role: "user", content: analysisPrompt }],
-          }),
+      logger.info({
+        event: "audio_extraction.calling_gpt4o_audio",
+        filePath: input.filePath,
+        model,
+      });
+
+      const response = await openai.analyzeAudio(input.filePath, analysisPrompt, {
+        model,
+        maxTokens: 4096,
+        temperature: 0.3,
+      });
+
+      const content = response.content;
+
+      logger.info({
+        event: "audio_extraction.response_received",
+        filePath: input.filePath,
+        responseLength: content?.length ?? 0,
+      });
+
+      // Parse the JSON response
+      let analysisResult: AudioExtractionResult;
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          analysisResult = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error("No JSON found in response");
+        }
+      } catch (parseErr) {
+        logger.warn({
+          event: "audio_extraction.parse_failed",
+          filePath: input.filePath,
+          error: parseErr instanceof Error ? parseErr.message : String(parseErr),
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          const content = data.content?.[0]?.text || "{}";
-          try {
-            const jsonMatch = content.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              analysisResult = JSON.parse(jsonMatch[0]);
-            } else {
-              throw new Error("No JSON found in response");
-            }
-          } catch {
-            analysisResult = {
-              speakers: [],
-              transcription: [{ text: transcriptionText }],
-              summary: transcriptionText.slice(0, 200) + "...",
-              intentions: [],
-              backgroundNoises: [],
-              language: transcriptionResult.language || "unknown",
-            };
-          }
-        } else {
-          analysisResult = {
-            speakers: [],
-            transcription: [{ text: transcriptionText }],
-            summary: transcriptionText.slice(0, 200) + "...",
-            intentions: [],
-            backgroundNoises: [],
-            language: transcriptionResult.language || "unknown",
-          };
-        }
-      } else {
+        // Return a basic result with the raw content as transcription
         analysisResult = {
           speakers: [],
-          transcription: [{ text: transcriptionText }],
-          summary: transcriptionText.slice(0, 200) + "...",
+          transcription: [{ text: content || "Unable to transcribe audio" }],
+          summary: content?.slice(0, 200) || "Audio analysis failed",
           intentions: [],
           backgroundNoises: [],
-          language: transcriptionResult.language || "unknown",
+          language: "unknown",
         };
       }
+
+      logger.info({
+        event: "audio_extraction.complete",
+        filePath: input.filePath,
+        speakersCount: analysisResult.speakers?.length ?? 0,
+        transcriptionSegments: analysisResult.transcription?.length ?? 0,
+      });
 
       return {
         success: true,
         output: analysisResult,
       };
     } catch (err) {
+      logger.error({
+        event: "audio_extraction.error",
+        filePath: input.filePath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+
       return {
         success: false,
         error: `Failed to extract audio: ${err instanceof Error ? err.message : String(err)}`,
