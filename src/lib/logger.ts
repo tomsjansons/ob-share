@@ -2,6 +2,9 @@ import pino from "pino";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+// DEBUG_LEVEL environment variable controls log level (default: info)
+const debugLevel = process.env.DEBUG_LEVEL || "info";
+
 // Track when the logger module was first loaded (process start time reference)
 const PROCESS_START_TIME = Date.now();
 
@@ -14,13 +17,14 @@ export function getElapsedMs(): number {
 
 /**
  * Pino logger configuration
+ * - DEBUG_LEVEL env var controls log level (default: info, set to "debug" for verbose logging)
  * - In development: pretty-print with colors
  * - In production: JSON format for Railway structured logging
  *   Railway supports @attribute:value filtering on JSON logs
  *   See: https://docs.railway.com/guides/logs#structured-logs
  */
 export const logger = pino({
-  level: process.env.LOG_LEVEL || (isDev ? "debug" : "info"),
+  level: debugLevel,
   // In production, use default JSON output (no transport)
   // Railway auto-normalizes: msg -> message, level matching
   ...(isDev
@@ -42,6 +46,7 @@ logger.info({
   event: "logger.init",
   elapsedMs: getElapsedMs(),
   nodeEnv: process.env.NODE_ENV,
+  debugLevel,
   pid: process.pid,
 }, "Logger initialized");
 

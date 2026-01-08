@@ -99,7 +99,24 @@ async function scanIncomingFolder(
   };
 
   try {
+    logger.debug({
+      event: "file-checker-job.folder_scan_start",
+      incomingPath,
+    });
+
     const entries = await fs.readdir(incomingPath, { withFileTypes: true });
+
+    const allFiles = entries.filter(e => e.isFile()).map(e => e.name);
+    const mdFiles = entries.filter(e => e.isFile() && e.name.endsWith(".md")).map(e => e.name);
+
+    logger.debug({
+      event: "file-checker-job.folder_scan_result",
+      incomingPath,
+      totalEntries: entries.length,
+      totalFiles: allFiles.length,
+      mdFilesCount: mdFiles.length,
+      mdFiles,
+    });
 
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".md")) {
@@ -109,8 +126,31 @@ async function scanIncomingFolder(
       const filePath = path.join(incomingPath, entry.name);
 
       try {
+        logger.debug({
+          event: "file-checker-job.file_read_start",
+          filePath,
+          fileName: entry.name,
+        });
+
         const content = await fs.readFile(filePath, "utf-8");
+
+        logger.debug({
+          event: "file-checker-job.file_read_complete",
+          filePath,
+          contentLength: content.length,
+          contentPreview: content.slice(0, 100).replace(/\n/g, "\\n"),
+        });
+
         const parsed = parseFrontmatter(content);
+
+        logger.debug({
+          event: "file-checker-job.frontmatter_parsed",
+          filePath,
+          frontmatterKeys: Object.keys(parsed.data),
+          status: parsed.data.status,
+          hasFrontmatter: Object.keys(parsed.data).length > 0,
+          bodyLength: parsed.content.length,
+        });
 
         // Check if status is "new" or ready for retry
         const isNew = parsed.data.status === "new";
@@ -121,6 +161,8 @@ async function scanIncomingFolder(
             event: "file-checker-job.file_skipped",
             filePath,
             status: parsed.data.status,
+            isNew,
+            isRetryReady,
             reason: parsed.data.status ? `status is '${parsed.data.status}', not 'new'` : "no status in frontmatter",
           });
           continue;
