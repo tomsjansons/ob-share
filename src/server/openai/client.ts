@@ -258,53 +258,25 @@ export class OpenAIClient {
     try {
       const openai = this.createClient();
 
-      // Build form data for the API request
-      // The transcriptions.create method doesn't support diarized_json yet,
-      // so we use the raw API via fetch
-      const formData = new FormData();
-      const fileBuffer = await fs.readFile(filePath);
-      const fileName = path.basename(filePath);
-      const blob = new Blob([fileBuffer], { type: this.getMimeType(filePath) });
-      formData.append("file", blob, fileName);
-      formData.append("model", model);
-      formData.append("response_format", "diarized_json");
-      formData.append("chunking_strategy", "auto");
-
-      if (options?.language) {
-        formData.append("language", options.language);
-      }
-
-      logger.info({
-        event: "openai.transcribeDiarize.request",
-        filePath,
+      // Use the SDK with createReadStream for proper file upload
+      // Cast to access the response with diarization fields
+      const response = await openai.audio.transcriptions.create({
+        file: createReadStream(filePath),
         model,
-        fileName,
-      });
-
-      const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${this.config.apiKey}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
-      }
-
-      const data = await response.json() as DiarizedTranscriptionResult;
+        response_format: "verbose_json",
+        chunking_strategy: "auto",
+        ...(options?.language && { language: options.language }),
+      }) as unknown as DiarizedTranscriptionResult;
 
       logger.info({
         event: "openai.transcribeDiarize.complete",
         filePath,
-        duration: data.duration,
-        segmentCount: data.segments?.length ?? 0,
-        textLength: data.text?.length ?? 0,
+        duration: response.duration,
+        segmentCount: response.segments?.length ?? 0,
+        textLength: response.text?.length ?? 0,
       });
 
-      return data;
+      return response;
     } catch (err) {
       logger.error({
         event: "openai.transcribeDiarize.error",
