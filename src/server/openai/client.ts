@@ -264,7 +264,6 @@ export class OpenAIClient {
         file: createReadStream(filePath),
         model,
         response_format: "verbose_json",
-        chunking_strategy: "auto",
         ...(options?.language && { language: options.language }),
       }) as unknown as DiarizedTranscriptionResult;
 
