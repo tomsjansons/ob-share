@@ -190,6 +190,52 @@ const has = hasFrontmatter(content);
 - Well-tested library used by many markdown tools
 - Prevents bugs from inconsistent custom implementations
 
+## Browser Extension (Chrome/Vivaldi)
+
+A private Chrome extension for sharing links directly from desktop browsers.
+
+### Key Extension Files
+
+| File | Purpose |
+|------|---------|
+| `chrome-extension/manifest.json` | Extension manifest (Manifest V3) |
+| `chrome-extension/background.js` | Service worker for handling sharing |
+| `chrome-extension/options.html` | Settings page UI |
+| `chrome-extension/options.js` | Settings page logic |
+| `chrome-extension/note-popup.html` | Share with note popup UI |
+| `chrome-extension/note-popup.js` | Share with note popup logic |
+| `chrome-extension/icons/` | Extension icons (16, 48, 128px) |
+| `scripts/generate-extension-icons.ts` | Icon generation script |
+| `src/app/api/extension/route.ts` | API endpoint to download extension as zip |
+| `src/components/browser-extension-card.tsx` | Dashboard download card component |
+
+### Extension Features
+
+- **Click icon**: Instantly share current page URL to ob-share
+- **Right-click menu**: Share page, share with note, share link, share selection
+- **Settings**: Configure custom ob-share URL (default: https://ob-share.up.railway.app)
+- **Share with note**: Add a note/context when sharing
+
+### Modifying Extension Behavior
+
+| Change | Files to Update |
+|--------|-----------------|
+| Change default URL | `chrome-extension/background.js` - `DEFAULT_OB_SHARE_URL` |
+| Add context menu items | `chrome-extension/background.js` - `chrome.contextMenus.create()` |
+| Change settings UI | `chrome-extension/options.html`, `chrome-extension/options.js` |
+| Change note popup UI | `chrome-extension/note-popup.html`, `chrome-extension/note-popup.js` |
+| Regenerate icons | Run `pnpm tsx scripts/generate-extension-icons.ts` |
+| Change download UI | `src/components/browser-extension-card.tsx` |
+
+### Installation Flow
+
+1. User downloads extension from dashboard (`/api/extension`)
+2. User extracts zip file to a folder
+3. User navigates to `chrome://extensions`
+4. User enables Developer mode
+5. User clicks "Load unpacked" and selects folder
+6. Extension is installed and ready to use
+
 ## Vault Integration
 
 The app saves shared content to the Obsidian vault automatically. Vault path is configured per-user via the settings page.

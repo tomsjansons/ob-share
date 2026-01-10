@@ -11,9 +11,10 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff, Clock, Key, RefreshCw, Globe } from "lucide-react";
+import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff, Clock, Key, RefreshCw, Globe, Chrome } from "lucide-react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
+import { BrowserExtensionCard } from "@/components/browser-extension-card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AvatarDropdown } from "@/components/avatar-dropdown";
 import { isGeolocationSupported, requestLocationPermission, checkLocationPermission } from "@/lib/location";
@@ -858,6 +859,18 @@ export function SettingsPage({ user }: SettingsPageProps) {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Browser Extension Section */}
+            <div className="space-y-4 pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <Chrome className="h-5 w-5 text-muted-foreground" />
+                <Label className="text-base font-medium">Browser Extension</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Share links directly from Chrome, Vivaldi, or any Chromium browser.
+              </p>
+              <BrowserExtensionCard />
             </div>
 
             {/* Back Link */}

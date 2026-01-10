@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ob-share Extension Settings</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #0f0f0f;
+      color: #e5e5e5;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+
+    .subtitle {
+      color: #888;
+      margin-bottom: 32px;
+    }
+
+    .form-group {
+      margin-bottom: 24px;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: #e5e5e5;
+    }
+
+    input[type="url"] {
+      width: 100%;
+      padding: 12px 16px;
+      font-size: 14px;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background: #1a1a1a;
+      color: #fff;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="url"]:focus {
+      border-color: #7c3aed;
+      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+    }
+
+    input[type="url"]::placeholder {
+      color: #666;
+    }
+
+    .help-text {
+      font-size: 12px;
+      color: #888;
+      margin-top: 8px;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 500;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #7c3aed;
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: #6d28d9;
+    }
+
+    .btn-secondary {
+      background: #333;
+      color: #e5e5e5;
+    }
+
+    .btn-secondary:hover {
+      background: #444;
+    }
+
+    .status {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .status.success {
+      display: block;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #22c55e;
+    }
+
+    .status.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #ef4444;
+    }
+
+    .section {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #fff;
+    }
+
+    .keyboard-shortcuts {
+      font-size: 13px;
+      line-height: 1.8;
+    }
+
+    .keyboard-shortcuts dt {
+      font-weight: 500;
+      color: #e5e5e5;
+    }
+
+    .keyboard-shortcuts dd {
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    kbd {
+      background: #333;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ob-share Settings</h1>
+    <p class="subtitle">Configure your ob-share browser extension</p>
+
+    <div class="section">
+      <h2 class="section-title">Server URL</h2>
+      <div class="form-group">
+        <label for="obShareUrl">ob-share URL</label>
+        <input
+          type="url"
+          id="obShareUrl"
+          placeholder="https://ob-share.up.railway.app"
+        >
+        <p class="help-text">The URL of your ob-share instance. Leave empty to use the default.</p>
+      </div>
+
+      <div class="button-group">
+        <button type="button" class="btn-primary" id="saveBtn">Save Settings</button>
+        <button type="button" class="btn-secondary" id="resetBtn">Reset to Default</button>
+      </div>
+
+      <div class="status" id="status"></div>
+    </div>
+
+    <div class="section">
+      <h2 class="section-title">How to Use</h2>
+      <dl class="keyboard-shortcuts">
+        <dt>Click extension icon</dt>
+        <dd>Instantly share the current page to ob-share</dd>
+
+        <dt>Right-click on page</dt>
+        <dd>Access "Share this page", "Share with note...", and "Settings"</dd>
+
+        <dt>Right-click on a link</dt>
+        <dd>Share that specific link to ob-share</dd>
+
+        <dt>Select text + right-click</dt>
+        <dd>Share the page with selected text as a note</dd>
+      </dl>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
