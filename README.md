@@ -396,7 +396,7 @@ ob-share includes an automated system that periodically scans your incoming fold
   - **Image Analysis**: Uses `ANTHROPIC_API_KEY` environment variable
 - Required environment variables (fallback if not configured in Settings):
   - `ANTHROPIC_API_KEY` for image analysis
-  - `OPENAI_API_KEY` for audio transcription (Whisper) and document analysis
+  - `OPENAI_API_KEY` for audio transcription (gpt-4o-transcribe-diarize) and document analysis
 
 **Supported document formats:**
 - PDF files (`.pdf`)

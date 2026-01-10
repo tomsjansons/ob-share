@@ -29,28 +29,22 @@ export interface OpenAIConfig {
 
 /**
  * Diarized transcription segment with speaker information
+ * Matches the OpenAI diarized_json response format for gpt-4o-transcribe-diarize
  */
 export interface DiarizedSegment {
-  type: string;
-  id: string;
+  speaker: string;
+  text: string;
   start: number;
   end: number;
-  text: string;
-  speaker: string;
 }
 
 /**
  * Diarized transcription result from gpt-4o-transcribe-diarize
+ * Response format when using response_format: "diarized_json"
  */
 export interface DiarizedTranscriptionResult {
-  task: string;
-  duration: number;
   text: string;
   segments: DiarizedSegment[];
-  usage?: {
-    type: string;
-    seconds: number;
-  };
 }
 
 /**
@@ -134,6 +128,11 @@ export class OpenAIClient {
   /**
    * Transcribe audio with diarization using gpt-4o-transcribe-diarize
    * Uses the official OpenAI audio transcriptions endpoint with diarized_json response format
+   *
+   * According to OpenAI docs:
+   * - gpt-4o-transcribe-diarize supports json, text, and diarized_json response formats
+   * - chunking_strategy is required when audio is longer than 30 seconds ("auto" is recommended)
+   * - diarized_json response includes segments with speaker, text, start, and end
    */
   async transcribeWithDiarization(
     filePath: string,
@@ -151,18 +150,19 @@ export class OpenAIClient {
       const openai = this.createClient();
 
       // Use the SDK with createReadStream for proper file upload
-      // Cast to access the response with diarization fields
+      // response_format: "diarized_json" returns segments with speaker labels
+      // chunking_strategy: "auto" is required for audio longer than 30 seconds
       const response = await openai.audio.transcriptions.create({
         file: createReadStream(filePath),
         model,
-        response_format: "verbose_json",
+        response_format: "diarized_json" as "json", // SDK types don't include diarized_json yet, but API accepts it
+        chunking_strategy: "auto" as unknown as undefined, // Required for audio > 30 seconds
         ...(options?.language && { language: options.language }),
-      }) as unknown as DiarizedTranscriptionResult;
+      } as Parameters<typeof openai.audio.transcriptions.create>[0]) as unknown as DiarizedTranscriptionResult;
 
       logger.info({
         event: "openai.transcribeDiarize.complete",
         filePath,
-        duration: response.duration,
         segmentCount: response.segments?.length ?? 0,
         textLength: response.text?.length ?? 0,
       });
