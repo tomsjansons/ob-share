@@ -7,9 +7,10 @@
  */
 
 import { db } from "../db";
-import { jobPhases } from "../db/schema";
+import { jobs, jobPhases } from "../db/schema";
 import { eq, and } from "drizzle-orm";
 import { logger as baseLogger } from "@/lib/logger";
+import { yieldToEventLoop } from "@/lib/async-utils";
 import type {
   JobDefinition,
   JobRecord,
@@ -20,14 +21,6 @@ import type {
 
 // Module logger for task runner
 const logger = baseLogger.child({ module: "task-runner" });
-
-/**
- * Yield to the event loop to allow HTTP requests to be processed.
- * This is necessary because better-sqlite3 is synchronous and blocks the event loop.
- */
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
 
 interface ExecutionResult {
   success: boolean;
@@ -144,7 +137,8 @@ export class TaskRunner {
         job,
         phaseRecord,
         payload,
-        phaseInput
+        phaseInput,
+        signal
       );
 
       if (phaseDefinition.shouldRun && !phaseDefinition.shouldRun(context)) {
@@ -297,7 +291,8 @@ export class TaskRunner {
     job: JobRecord,
     phase: PhaseRecord,
     payload: unknown,
-    input: unknown
+    input: unknown,
+    signal: AbortSignal
   ): PhaseContext {
     return {
       job: {
@@ -314,7 +309,7 @@ export class TaskRunner {
         retryCount: phase.retryCount,
       },
       handlerId: this.handlerId,
-      signal: new AbortController().signal, // Will be updated with actual signal
+      signal, // Pass the actual job signal for proper cancellation propagation
     };
   }
 
@@ -393,8 +388,8 @@ export async function runPhaseManually(
 ): Promise<PhaseResult> {
   const [job] = await db
     .select()
-    .from(require("../db/schema").jobs)
-    .where(eq(require("../db/schema").jobs.id, jobId))
+    .from(jobs)
+    .where(eq(jobs.id, jobId))
     .limit(1);
 
   if (!job) {

@@ -143,11 +143,13 @@ export class ToolStep extends BaseStep<ToolStepConfig> {
         "Starting tool execution"
       );
 
-      // Create tool context
+      // Create tool context - userId is passed through workflow context metadata
+      // The userId is added to metadata when the workflow instance is created
+      const metadata = workflowContext.metadata as unknown as Record<string, unknown>;
       const toolContext: ToolContext = {
         workflowId: workflowContext.metadata.workflowId,
         stepId: stepRecord.id,
-        userId: undefined, // TODO: Add user context
+        userId: typeof metadata.userId === "string" ? metadata.userId : undefined,
         signal,
         logger: createToolLogger(this.id, toolName),
       };
@@ -479,12 +481,23 @@ export const delayTool = defineTool({
   outputSchema: z.object({ waited: z.number() }),
   execute: async (input, context) => {
     const start = Date.now();
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(resolve, input.ms);
-      context.signal.addEventListener("abort", () => {
+
+      // Use { once: true } to prevent event listener accumulation
+      const onAbort = () => {
         clearTimeout(timeout);
         reject(new Error("Delay cancelled"));
-      });
+      };
+
+      context.signal.addEventListener("abort", onAbort, { once: true });
+
+      // Clean up listener on successful completion too
+      const originalResolve = resolve;
+      resolve = () => {
+        context.signal.removeEventListener("abort", onAbort);
+        originalResolve();
+      };
     });
     return {
       success: true,

@@ -27,11 +27,28 @@ async function createDefaultSettings(userId: string): Promise<void> {
       userId,
     });
   } catch (error) {
-    // Settings may already exist, ignore
-    authLogger.debug({
-      event: "auth.user.settings_exists",
-      userId,
-    });
+    // Check if this is a unique constraint violation (settings already exist)
+    const isUniqueConstraintError =
+      error instanceof Error &&
+      (error.message.includes("UNIQUE constraint failed") ||
+        error.message.includes("SQLITE_CONSTRAINT_UNIQUE") ||
+        error.message.includes("duplicate key"));
+
+    if (isUniqueConstraintError) {
+      // Settings already exist, this is expected
+      authLogger.debug({
+        event: "auth.user.settings_exists",
+        userId,
+      });
+    } else {
+      // Unexpected error - log and re-throw
+      authLogger.error({
+        event: "auth.user.settings_error",
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      }, "Unexpected error creating user settings");
+      throw error;
+    }
   }
 }
 

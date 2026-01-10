@@ -15,17 +15,10 @@ import { eq, lte, and, isNull, or } from "drizzle-orm";
 import { createJob } from "./job-service";
 import { JobRegistry } from "./registry";
 import { logger as baseLogger } from "@/lib/logger";
+import { yieldToEventLoop } from "@/lib/async-utils";
 import type { JobPriority } from "./types";
 
 const logger = baseLogger.child({ module: "periodic-job-service" });
-
-/**
- * Yield to the event loop to allow HTTP requests to be processed.
- * This is necessary because better-sqlite3 is synchronous and blocks the event loop.
- */
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
 
 /**
  * Configuration for registering a periodic job schedule

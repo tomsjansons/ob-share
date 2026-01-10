@@ -13,18 +13,11 @@ import { JobRegistry } from "./registry";
 import { cleanupOldJobs, getHandlerHealth, getQueueStats } from "./job-service";
 import { processDueSchedules } from "./periodic-job-service";
 import { logger as baseLogger } from "@/lib/logger";
+import { yieldToEventLoop } from "@/lib/async-utils";
 import type { QueueEventHandler } from "./types";
 
 // Module logger for scheduler
 const logger = baseLogger.child({ module: "queue-scheduler" });
-
-/**
- * Yield to the event loop to allow HTTP requests to be processed.
- * This is necessary because better-sqlite3 is synchronous and blocks the event loop.
- */
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
 
 /**
  * Default interval: 30 minutes in milliseconds

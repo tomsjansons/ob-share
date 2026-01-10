@@ -9,6 +9,7 @@ import { randomUUID } from "crypto";
 import { db } from "../db";
 import { jobs, jobPhases, queueHandlerHeartbeat } from "../db/schema";
 import { eq, and, or, desc, asc, lte, sql, count } from "drizzle-orm";
+import { logger as baseLogger } from "@/lib/logger";
 import type {
   CreateJobConfig,
   JobRecord,
@@ -18,8 +19,15 @@ import type {
   JobPriority,
 } from "./types";
 
+const logger = baseLogger.child({ module: "job-service" });
+
 /**
  * Create a new job and add it to the queue
+ *
+ * @param config - Job configuration
+ * @param definitions - Optional map of job definitions for validation.
+ *   If provided and the job type exists, payload will be validated.
+ *   If not provided, validation is skipped (use with caution).
  */
 export async function createJob<TPayload = unknown>(
   config: CreateJobConfig<TPayload>,
@@ -32,11 +40,26 @@ export async function createJob<TPayload = unknown>(
   // Validate payload if definition exists
   if (definitions) {
     const definition = definitions.get(config.type);
-    if (definition?.validatePayload) {
-      if (!definition.validatePayload(config.payload)) {
+    if (!definition) {
+      // Log warning but allow creation - the job type might be registered later
+      logger.warn({
+        event: "job.create.unknown_type",
+        jobType: config.type,
+        jobId: id,
+      }, "Creating job with unknown type - no validation performed");
+    } else if (definition.validatePayload) {
+      const isValid = definition.validatePayload(config.payload);
+      if (!isValid) {
         throw new Error(`Invalid payload for job type: ${config.type}`);
       }
     }
+  } else {
+    // No definitions provided - skip validation but log for debugging
+    logger.debug({
+      event: "job.create.no_definitions",
+      jobType: config.type,
+      jobId: id,
+    }, "Creating job without validation (no definitions provided)");
   }
 
   const jobRecord = {
