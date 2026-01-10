@@ -10,4 +10,9 @@ export {
   prepareAudioForOpenAI,
   requiresConversion,
   isNativeFormat,
+  getAudioDuration,
+  validateAudioDuration,
+  convertAndValidateAudio,
 } from "./convert";
+
+export type { AudioConversionResult } from "./convert";

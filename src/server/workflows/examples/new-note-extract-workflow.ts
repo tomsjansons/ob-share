@@ -114,6 +114,28 @@ function formatAudioExtraction(result: AudioExtractionResult): string {
 
   sections.push("## Extracted Audio Content\n");
 
+  // Add WAV file attachment if conversion happened
+  if (result.wavFilePath) {
+    const wavFileName = path.basename(result.wavFilePath);
+    sections.push(`### Converted Audio\n![[${wavFileName}]]\n`);
+
+    // Add conversion status
+    if (result.conversionValid === false) {
+      sections.push("> [!warning] Transcoding Validation Failed");
+      sections.push(`> ${result.conversionError || "Duration mismatch between original and converted audio"}`);
+      sections.push("");
+    }
+  }
+
+  // If there's a conversion error and no transcription, show error prominently
+  if (result.conversionError && result.transcription.length === 0) {
+    sections.push("### Transcription Error\n");
+    sections.push(`> [!error] Audio Extraction Failed`);
+    sections.push(`> ${result.conversionError}`);
+    sections.push("");
+    return sections.join("\n");
+  }
+
   if (result.summary) {
     sections.push(`### Summary\n${result.summary}\n`);
   }
