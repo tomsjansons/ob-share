@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 import { PassThrough } from "stream";
 
-const EXTENSION_DIR = path.join(process.cwd(), "chrome-extension");
+const EXTENSION_DIR = path.join(process.cwd(), "public", "chrome-extension");
 
 export async function GET() {
   try {
