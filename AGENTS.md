@@ -498,6 +498,31 @@ The app includes a robust async job queue system for background task processing.
 3. **Visibility Timeout**: Prevents duplicate processing by hiding claimed jobs
 4. **Heartbeat**: Health monitoring to detect dead handlers
 5. **Scheduler**: Periodic processing trigger (30-minute intervals)
+6. **Visibility Heartbeat**: Extends job visibility during long-running phase execution
+7. **Graceful Shutdown**: Releases jobs immediately on handler stop for quick reclaim
+
+### Deployment Resilience
+
+The job queue is designed to survive deployments without losing jobs:
+
+| Mechanism | Purpose |
+|-----------|---------|
+| Visibility heartbeat | TaskRunner extends job visibility every 60s during execution |
+| Stalled phase reset | Phases left in "running" state are reset to "pending" on reclaim |
+| Graceful job release | Handler.stop() immediately releases jobs as "stalled" |
+| Orphan reclaim | Jobs from dead handlers are reclaimed proactively |
+| Max execution time | Jobs exceeding 1 hour are failed to prevent infinite runs |
+
+**Key configuration in `types.ts`:**
+- `visibilityHeartbeatInterval`: 60000ms (1 min) - extend visibility during execution
+- `maxJobExecutionTime`: 3600000ms (1 hour) - circuit breaker for stuck jobs
+- `visibilityTimeout`: 300000ms (5 min) - how long until a job becomes visible again
+- `heartbeatTimeout`: 120000ms (2 min) - how long until a handler is considered dead
+
+**Phase idempotency is critical:**
+- Phases may be executed multiple times due to restarts
+- Always check if work is already done before re-doing it
+- Use database checks or file existence tests for idempotency
 
 ### Creating a New Job Type
 

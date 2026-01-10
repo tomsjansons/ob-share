@@ -697,6 +697,36 @@ The application includes a robust async job queue system for handling background
 | Automatic retries | Failed jobs retry with exponential backoff |
 | Manual triggering | Process queue on-demand via tRPC API |
 | Scheduled processing | Runs every 30 minutes by default |
+| Deployment resilience | Jobs survive deployments and are automatically recovered |
+
+### Deployment Resilience
+
+The job queue is designed to handle deployments gracefully. Jobs will not get stuck if a deployment occurs mid-execution.
+
+| Feature | Description |
+|---------|-------------|
+| Visibility heartbeat | Long-running phases automatically extend visibility to prevent premature stalling |
+| Graceful shutdown | Handler releases jobs immediately on shutdown, no waiting for timeout |
+| Stalled phase recovery | Phases left in 'running' state are reset to 'pending' on reclaim |
+| Orphan detection | Jobs from dead handlers are immediately reclaimed |
+| Max execution time | Jobs that exceed maximum time are failed to prevent infinite runs |
+
+**How it works during deployment:**
+
+1. **Graceful shutdown signal received** → Handler cancels running jobs and releases them to "stalled" state
+2. **Jobs immediately available** → No waiting for visibility timeout (5 min default)
+3. **New handler starts** → Detects stalled jobs and any jobs from dead handlers
+4. **Phase state check** → Any phases left in "running" are reset to "pending" for retry
+5. **Execution resumes** → Previously completed phases are skipped (idempotent), only pending phases run
+
+**Configuration:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Visibility heartbeat | 60s | How often to extend visibility during execution |
+| Max job execution time | 1 hour | Maximum total time for a job before it's failed |
+| Visibility timeout | 5 min | How long before a job becomes visible again |
+| Heartbeat timeout | 2 min | How long before a handler is considered dead |
 
 ### Job Queue Architecture
 

@@ -205,6 +205,10 @@ export interface QueueHandlerConfig {
   concurrency?: number;
   /** Maximum time to wait for graceful shutdown (ms) */
   shutdownTimeout?: number;
+  /** How often to extend visibility during phase execution (ms). Should be less than visibilityTimeout. */
+  visibilityHeartbeatInterval?: number;
+  /** Maximum total execution time for a job across all retries (ms). 0 = no limit. */
+  maxJobExecutionTime?: number;
 }
 
 /**
@@ -218,6 +222,8 @@ export const DEFAULT_QUEUE_CONFIG: Required<QueueHandlerConfig> = {
   heartbeatTimeout: 120000, // 2 minutes
   concurrency: 1, // Single job at a time
   shutdownTimeout: 30000, // 30 seconds
+  visibilityHeartbeatInterval: 60000, // 1 minute - extend visibility every minute during execution
+  maxJobExecutionTime: 3600000, // 1 hour max execution time for a single job
 };
 
 /**
