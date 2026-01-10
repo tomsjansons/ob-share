@@ -70,7 +70,13 @@ export class QueueHandler {
       handlerId: config?.handlerId || `handler-${randomUUID().slice(0, 8)}`,
       ...config,
     };
-    this.taskRunner = new TaskRunner(this.jobDefinitions, this.config.handlerId);
+    // Create task runner with visibility extender callback to prevent stalling during long phases
+    this.taskRunner = new TaskRunner(
+      this.jobDefinitions,
+      this.config.handlerId,
+      (jobId: string) => this.extendVisibility(jobId),
+      this.config
+    );
   }
 
   /**
@@ -166,6 +172,10 @@ export class QueueHandler {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
+    // IMPORTANT: Move any remaining processing jobs to stalled state immediately
+    // This allows them to be picked up by another handler without waiting for visibility timeout
+    await this.releaseProcessingJobs();
+
     // Mark handler as stopped
     await this.unregisterHandler();
 
@@ -174,6 +184,50 @@ export class QueueHandler {
 
     this.emit({ type: "handler:stopped", handlerId: this.config.handlerId });
     logger.debug({ event: "queue.handler.stopped", handlerId: this.config.handlerId, jobsProcessed: this.stats.jobsProcessed, jobsFailed: this.stats.jobsFailed }, "Queue handler stopped");
+  }
+
+  /**
+   * Release all jobs currently being processed by this handler.
+   * This is called during graceful shutdown to allow jobs to be picked up
+   * by another handler immediately instead of waiting for visibility timeout.
+   */
+  private async releaseProcessingJobs(): Promise<void> {
+    const now = new Date();
+
+    try {
+      // Move all jobs owned by this handler from processing to stalled
+      // Set visibleAt to now so they can be immediately reclaimed
+      const releasedJobs = await db
+        .update(jobs)
+        .set({
+          status: "stalled",
+          handlerId: null,
+          visibleAt: now, // Make immediately available for reclaim
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(jobs.handlerId, this.config.handlerId),
+            eq(jobs.status, "processing")
+          )
+        )
+        .returning({ id: jobs.id });
+
+      if (releasedJobs.length > 0) {
+        logger.info({
+          event: "queue.handler.jobs_released",
+          handlerId: this.config.handlerId,
+          count: releasedJobs.length,
+          jobIds: releasedJobs.map(j => j.id),
+        }, "Released processing jobs for reclaim by another handler");
+      }
+    } catch (err) {
+      logger.error({
+        event: "queue.handler.release_error",
+        handlerId: this.config.handlerId,
+        err,
+      }, "Error releasing processing jobs during shutdown");
+    }
   }
 
   /**
@@ -548,17 +602,18 @@ export class QueueHandler {
   }
 
   /**
-   * Handle jobs that have exceeded their visibility timeout
+   * Handle jobs that have exceeded their visibility timeout or belong to dead handlers
    */
   private async handleStalledJobs(): Promise<void> {
     const now = new Date();
 
-    // Find jobs that are marked as processing but visibility has expired
+    // 1. Find jobs that are marked as processing but visibility has expired
     const stalledJobs = await db
       .update(jobs)
       .set({
         status: "stalled",
         handlerId: null,
+        visibleAt: now, // Make immediately available for reclaim
         updatedAt: now,
       })
       .where(
@@ -570,7 +625,89 @@ export class QueueHandler {
       .returning({ id: jobs.id });
 
     if (stalledJobs.length > 0) {
-      logger.warn({ event: "queue.stalled_jobs", count: stalledJobs.length, jobIds: stalledJobs.map(j => j.id) }, "Found stalled jobs");
+      logger.warn({ event: "queue.stalled_jobs", count: stalledJobs.length, jobIds: stalledJobs.map(j => j.id) }, "Found stalled jobs (visibility timeout expired)");
+    }
+
+    // 2. Find and reclaim orphaned jobs - jobs belonging to dead handlers
+    // This catches jobs faster than waiting for visibility timeout
+    await this.reclaimOrphanedJobs();
+  }
+
+  /**
+   * Reclaim jobs that belong to dead handlers.
+   * This is more aggressive than visibility timeout - if a handler is confirmed dead,
+   * we immediately release its jobs for processing by another handler.
+   */
+  private async reclaimOrphanedJobs(): Promise<void> {
+    const now = new Date();
+    const heartbeatTimeout = this.config.heartbeatTimeout;
+    const cutoff = new Date(now.getTime() - heartbeatTimeout);
+
+    try {
+      // First, get all dead handlers (handlers that haven't sent a heartbeat recently)
+      const deadHandlers = await db
+        .select({ id: queueHandlerHeartbeat.id })
+        .from(queueHandlerHeartbeat)
+        .where(
+          and(
+            eq(queueHandlerHeartbeat.status, "alive"),
+            lte(queueHandlerHeartbeat.lastHeartbeat, cutoff)
+          )
+        );
+
+      if (deadHandlers.length === 0) {
+        return;
+      }
+
+      const deadHandlerIds = deadHandlers.map(h => h.id);
+
+      // Mark these handlers as dead
+      await db
+        .update(queueHandlerHeartbeat)
+        .set({
+          status: "dead",
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(queueHandlerHeartbeat.status, "alive"),
+            lte(queueHandlerHeartbeat.lastHeartbeat, cutoff)
+          )
+        );
+
+      // Reclaim all processing jobs from dead handlers
+      // Use SQL IN clause by iterating
+      for (const deadHandlerId of deadHandlerIds) {
+        const reclaimedJobs = await db
+          .update(jobs)
+          .set({
+            status: "stalled",
+            handlerId: null,
+            visibleAt: now, // Make immediately available
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(jobs.handlerId, deadHandlerId),
+              eq(jobs.status, "processing")
+            )
+          )
+          .returning({ id: jobs.id });
+
+        if (reclaimedJobs.length > 0) {
+          logger.warn({
+            event: "queue.orphaned_jobs_reclaimed",
+            deadHandlerId,
+            count: reclaimedJobs.length,
+            jobIds: reclaimedJobs.map(j => j.id),
+          }, "Reclaimed orphaned jobs from dead handler");
+        }
+      }
+    } catch (err) {
+      logger.error({
+        event: "queue.reclaim_orphaned_error",
+        err,
+      }, "Error reclaiming orphaned jobs");
     }
   }
 
