@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -24,45 +23,32 @@ export function BrowserExtensionCard() {
 
   return (
     <>
-      <Card className="w-full max-w-md">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Chrome className="h-5 w-5" />
-            Browser Extension
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Share links directly from Chrome, Vivaldi, or any Chromium browser
-            with a single click.
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          <Button onClick={handleDownload} className="flex-1">
+            <Download className="mr-2 h-4 w-4" />
+            Download Extension
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowInstructions(true)}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="text-xs text-muted-foreground space-y-1">
+          <p>
+            <strong>Features:</strong>
           </p>
-
-          <div className="flex gap-2">
-            <Button onClick={handleDownload} className="flex-1">
-              <Download className="mr-2 h-4 w-4" />
-              Download Extension
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setShowInstructions(true)}
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <div className="text-xs text-muted-foreground space-y-1">
-            <p>
-              <strong>Features:</strong>
-            </p>
-            <ul className="list-disc list-inside space-y-0.5 pl-1">
-              <li>One-click sharing from toolbar</li>
-              <li>Share with notes via right-click menu</li>
-              <li>Share selected text as notes</li>
-              <li>Share any link directly</li>
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
+          <ul className="list-disc list-inside space-y-0.5 pl-1">
+            <li>One-click sharing from toolbar</li>
+            <li>Share with notes via right-click menu</li>
+            <li>Share selected text as notes</li>
+            <li>Share any link directly</li>
+          </ul>
+        </div>
+      </div>
 
       {/* Installation Instructions Dialog */}
       <Dialog open={showInstructions} onOpenChange={setShowInstructions}>
