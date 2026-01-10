@@ -13,6 +13,7 @@ import { defineTool } from "../steps/tool-step";
 import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
 import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL } from "@/server/openai";
+import { convertAndValidateAudio, type AudioConversionResult } from "@/server/audio";
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -34,6 +35,11 @@ export const AudioExtractionResultSchema = z.object({
   backgroundNoises: z.array(z.string()),
   mood: z.string().optional(),
   language: z.string().optional(),
+  // Audio conversion info
+  wavFilePath: z.string().optional(),
+  wasConverted: z.boolean().optional(),
+  conversionValid: z.boolean().optional(),
+  conversionError: z.string().optional(),
 });
 
 export const VideoExtractionResultSchema = z.object({
@@ -175,6 +181,7 @@ export const extractAudioTool = defineTool({
   outputSchema: AudioExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<AudioExtractionResult>> => {
     let audioFileSize: number | null = null;
+    let conversionResult: AudioConversionResult | null = null;
 
     try {
       context.logger.info("Extracting audio content", { filePath: input.filePath });
@@ -211,19 +218,65 @@ export const extractAudioTool = defineTool({
         };
       }
 
+      // Convert audio to WAV if needed (webm, ogg, m4a, opus, flac -> wav)
+      // Native formats (wav, mp3) will not be converted
+      // The conversion also validates duration and saves the WAV file to vault
+      conversionResult = await convertAndValidateAudio(input.filePath);
+
+      if (conversionResult.wasConverted) {
+        logger.info({
+          event: "audio_extraction.converted_to_wav",
+          originalPath: input.filePath,
+          convertedPath: conversionResult.vaultWavPath,
+          originalFormat: originalExt,
+          durationValid: conversionResult.durationValid,
+          originalDuration: conversionResult.originalDuration,
+          convertedDuration: conversionResult.convertedDuration,
+        });
+      }
+
+      // If conversion failed duration validation, return error with WAV file info attached
+      if (conversionResult.wasConverted && !conversionResult.durationValid) {
+        logger.warn({
+          event: "audio_extraction.duration_validation_failed",
+          filePath: input.filePath,
+          vaultWavPath: conversionResult.vaultWavPath,
+          error: conversionResult.validationError,
+        });
+
+        // Return error result with WAV file info for attachment to MD
+        return {
+          success: false,
+          error: `Audio transcoding validation failed. The converted WAV file has been saved but transcription was not attempted.\n\n**Error:** ${conversionResult.validationError}\n\n**WAV File:** ${conversionResult.vaultWavPath ? path.basename(conversionResult.vaultWavPath) : "unknown"}`,
+          output: {
+            speakers: [],
+            transcription: [],
+            summary: "",
+            intentions: [],
+            backgroundNoises: [],
+            wavFilePath: conversionResult.vaultWavPath,
+            wasConverted: true,
+            conversionValid: false,
+            conversionError: conversionResult.validationError,
+          },
+        };
+      }
+
       // Create OpenAI client
       const openai = new OpenAIClient({ apiKey });
 
       logger.info({
         event: "audio_extraction.calling_transcribe_diarize",
-        filePath: input.filePath,
+        filePath: conversionResult.transcriptionFilePath,
+        originalFilePath: input.filePath,
         model,
         fileSize: audioFileSize,
-        format: originalExt,
+        format: conversionResult.wasConverted ? ".wav" : originalExt,
+        wasConverted: conversionResult.wasConverted,
       });
 
       // Use the transcription endpoint with diarization
-      const response = await openai.transcribeWithDiarization(input.filePath, {
+      const response = await openai.transcribeWithDiarization(conversionResult.transcriptionFilePath, {
         model,
       });
 
@@ -256,7 +309,7 @@ export const extractAudioTool = defineTool({
         timestamp: `${segment.start.toFixed(1)}s - ${segment.end.toFixed(1)}s`,
       }));
 
-      // Build the result
+      // Build the result with WAV file info
       const analysisResult: AudioExtractionResult = {
         speakers,
         transcription,
@@ -265,6 +318,10 @@ export const extractAudioTool = defineTool({
         backgroundNoises: [],
         language: undefined,
         mood: undefined,
+        // Include WAV file info for MD attachment
+        wavFilePath: conversionResult.vaultWavPath,
+        wasConverted: conversionResult.wasConverted,
+        conversionValid: conversionResult.durationValid,
       };
 
       logger.info({
@@ -273,6 +330,7 @@ export const extractAudioTool = defineTool({
         speakersCount: speakers.length,
         transcriptionSegments: transcription.length,
         duration: response.duration,
+        wavFilePath: conversionResult.vaultWavPath,
       });
 
       return {
@@ -290,6 +348,7 @@ export const extractAudioTool = defineTool({
         error: errorMsg,
         stack: errorStack,
         fileSize: audioFileSize,
+        vaultWavPath: conversionResult?.vaultWavPath,
       });
 
       // Build detailed error message
@@ -301,11 +360,28 @@ export const extractAudioTool = defineTool({
         `**Input File:** \`${input.filePath}\``,
         `**Format:** ${originalExt}`,
         audioFileSize ? `**File Size:** ${Math.round(audioFileSize / 1024)} KB` : `**File Size:** unknown`,
-      ].join("\n");
+      ];
+
+      // Include WAV file info if available
+      if (conversionResult?.vaultWavPath) {
+        errorLines.push(`**WAV File:** \`${path.basename(conversionResult.vaultWavPath)}\``);
+      }
 
       return {
         success: false,
-        error: `Failed to extract audio:\n\n${errorLines}`,
+        error: `Failed to extract audio:\n\n${errorLines.join("\n")}`,
+        // Include partial output with WAV file info if conversion happened
+        output: conversionResult?.wasConverted ? {
+          speakers: [],
+          transcription: [],
+          summary: "",
+          intentions: [],
+          backgroundNoises: [],
+          wavFilePath: conversionResult.vaultWavPath,
+          wasConverted: true,
+          conversionValid: conversionResult.durationValid,
+          conversionError: errorMsg,
+        } : undefined,
       };
     }
   },

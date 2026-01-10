@@ -17,6 +17,12 @@ const execAsync = promisify(exec);
 const logger = baseLogger.child({ module: "audio-convert" });
 
 /**
+ * Tolerance for duration validation (in seconds)
+ * Allow up to 0.5 seconds difference due to codec variations
+ */
+const DURATION_TOLERANCE_SECONDS = 0.5;
+
+/**
  * Supported input formats for conversion
  */
 const FORMATS_REQUIRING_CONVERSION = [".webm", ".ogg", ".m4a", ".opus", ".flac"];
@@ -32,6 +38,60 @@ const NATIVE_AUDIO_FORMATS = [".wav", ".mp3"];
 export function requiresConversion(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   return FORMATS_REQUIRING_CONVERSION.includes(ext);
+}
+
+/**
+ * Get audio duration in seconds using ffprobe
+ */
+export async function getAudioDuration(filePath: string): Promise<number> {
+  try {
+    const command = `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`;
+    const { stdout } = await execAsync(command, { timeout: 30000 });
+    const duration = parseFloat(stdout.trim());
+
+    if (isNaN(duration)) {
+      throw new Error("Could not parse duration from ffprobe output");
+    }
+
+    return duration;
+  } catch (err) {
+    logger.error({
+      event: "audio_convert.duration_error",
+      filePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw new Error(
+      `Failed to get audio duration: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+}
+
+/**
+ * Validate that two audio files have matching durations
+ * @returns true if durations match within tolerance
+ */
+export async function validateAudioDuration(
+  originalPath: string,
+  convertedPath: string
+): Promise<{ valid: boolean; originalDuration: number; convertedDuration: number }> {
+  const originalDuration = await getAudioDuration(originalPath);
+  const convertedDuration = await getAudioDuration(convertedPath);
+
+  const difference = Math.abs(originalDuration - convertedDuration);
+  const valid = difference <= DURATION_TOLERANCE_SECONDS;
+
+  logger.info({
+    event: "audio_convert.duration_validation",
+    originalPath,
+    convertedPath,
+    originalDuration,
+    convertedDuration,
+    difference,
+    valid,
+    tolerance: DURATION_TOLERANCE_SECONDS,
+  });
+
+  return { valid, originalDuration, convertedDuration };
 }
 
 /**
@@ -169,4 +229,140 @@ export async function prepareAudioForOpenAI(
 
   const convertedPath = await convertToWav(inputPath);
   return { filePath: convertedPath, wasConverted: true };
+}
+
+/**
+ * Result of audio conversion with validation
+ */
+export interface AudioConversionResult {
+  /** Whether conversion was needed (false for native formats like wav, mp3) */
+  wasConverted: boolean;
+  /** Path to the audio file to use for transcription */
+  transcriptionFilePath: string;
+  /** Path to the WAV file saved in vault (if converted) */
+  vaultWavPath?: string;
+  /** Whether duration validation passed */
+  durationValid: boolean;
+  /** Original audio duration in seconds */
+  originalDuration?: number;
+  /** Converted audio duration in seconds */
+  convertedDuration?: number;
+  /** Error message if validation failed */
+  validationError?: string;
+}
+
+/**
+ * Convert audio to WAV with duration validation and save to vault
+ *
+ * This function:
+ * 1. Checks if the file needs conversion (wav/mp3 are native)
+ * 2. Converts to WAV if needed
+ * 3. Validates duration matches between original and converted
+ * 4. Saves the WAV file to the vault next to the original
+ * 5. Returns detailed info for markdown attachment
+ *
+ * @param inputPath - Path to the input audio file
+ * @returns Conversion result with validation info
+ */
+export async function convertAndValidateAudio(
+  inputPath: string
+): Promise<AudioConversionResult> {
+  // Check if this is a native format that doesn't need conversion
+  if (isNativeFormat(inputPath)) {
+    logger.info({
+      event: "audio_convert.native_format",
+      inputPath,
+      format: path.extname(inputPath).toLowerCase(),
+    });
+
+    return {
+      wasConverted: false,
+      transcriptionFilePath: inputPath,
+      durationValid: true,
+    };
+  }
+
+  // Convert to WAV (to temp directory first)
+  const tempWavPath = await convertToWav(inputPath);
+
+  // Generate the vault destination path (same directory as original, with .wav extension)
+  const inputDir = path.dirname(inputPath);
+  const inputBasename = path.basename(inputPath, path.extname(inputPath));
+  const vaultWavPath = path.join(inputDir, `${inputBasename}.wav`);
+
+  try {
+    // Validate duration
+    const validation = await validateAudioDuration(inputPath, tempWavPath);
+
+    // Copy WAV to vault (regardless of validation - user wants it saved either way)
+    await fs.copyFile(tempWavPath, vaultWavPath);
+
+    logger.info({
+      event: "audio_convert.saved_to_vault",
+      inputPath,
+      vaultWavPath,
+      durationValid: validation.valid,
+    });
+
+    // Clean up temp file
+    await cleanupConvertedFile(tempWavPath);
+
+    if (!validation.valid) {
+      const errorMsg = `Duration mismatch: original ${validation.originalDuration.toFixed(2)}s vs converted ${validation.convertedDuration.toFixed(2)}s (difference: ${Math.abs(validation.originalDuration - validation.convertedDuration).toFixed(2)}s exceeds tolerance of ${DURATION_TOLERANCE_SECONDS}s)`;
+
+      logger.warn({
+        event: "audio_convert.duration_mismatch",
+        inputPath,
+        vaultWavPath,
+        originalDuration: validation.originalDuration,
+        convertedDuration: validation.convertedDuration,
+        error: errorMsg,
+      });
+
+      return {
+        wasConverted: true,
+        transcriptionFilePath: vaultWavPath,
+        vaultWavPath,
+        durationValid: false,
+        originalDuration: validation.originalDuration,
+        convertedDuration: validation.convertedDuration,
+        validationError: errorMsg,
+      };
+    }
+
+    return {
+      wasConverted: true,
+      transcriptionFilePath: vaultWavPath,
+      vaultWavPath,
+      durationValid: true,
+      originalDuration: validation.originalDuration,
+      convertedDuration: validation.convertedDuration,
+    };
+  } catch (err) {
+    // If validation or copy fails, still try to save the temp file to vault
+    try {
+      await fs.copyFile(tempWavPath, vaultWavPath);
+      logger.warn({
+        event: "audio_convert.saved_with_error",
+        inputPath,
+        vaultWavPath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } catch {
+      // Ignore copy errors
+    }
+
+    // Clean up temp file
+    await cleanupConvertedFile(tempWavPath);
+
+    const errorMsg = `Validation error: ${err instanceof Error ? err.message : String(err)}`;
+
+    return {
+      wasConverted: true,
+      transcriptionFilePath: vaultWavPath,
+      vaultWavPath,
+      durationValid: false,
+      validationError: errorMsg,
+    };
+  }
 }
