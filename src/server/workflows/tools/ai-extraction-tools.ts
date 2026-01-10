@@ -13,6 +13,7 @@ import { defineTool } from "../steps/tool-step";
 import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
 import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL } from "@/server/openai";
+import { prepareAudioForOpenAI, cleanupConvertedFile } from "@/server/audio";
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -175,6 +176,7 @@ export const extractAudioTool = defineTool({
   outputSchema: AudioExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<AudioExtractionResult>> => {
     let audioFileSize: number | null = null;
+    let convertedFilePath: string | null = null;
 
     try {
       context.logger.info("Extracting audio content", { filePath: input.filePath });
@@ -211,19 +213,34 @@ export const extractAudioTool = defineTool({
         };
       }
 
+      // Convert audio to WAV if needed (webm, ogg, m4a, opus, flac -> wav)
+      // This ensures maximum compatibility with OpenAI's transcription API
+      const { filePath: audioPath, wasConverted } = await prepareAudioForOpenAI(input.filePath);
+      if (wasConverted) {
+        convertedFilePath = audioPath;
+        logger.info({
+          event: "audio_extraction.converted_to_wav",
+          originalPath: input.filePath,
+          convertedPath: audioPath,
+          originalFormat: originalExt,
+        });
+      }
+
       // Create OpenAI client
       const openai = new OpenAIClient({ apiKey });
 
       logger.info({
         event: "audio_extraction.calling_transcribe_diarize",
-        filePath: input.filePath,
+        filePath: audioPath,
+        originalFilePath: input.filePath,
         model,
         fileSize: audioFileSize,
-        format: originalExt,
+        format: wasConverted ? ".wav" : originalExt,
+        wasConverted,
       });
 
       // Use the transcription endpoint with diarization
-      const response = await openai.transcribeWithDiarization(input.filePath, {
+      const response = await openai.transcribeWithDiarization(audioPath, {
         model,
       });
 
@@ -307,6 +324,11 @@ export const extractAudioTool = defineTool({
         success: false,
         error: `Failed to extract audio:\n\n${errorLines}`,
       };
+    } finally {
+      // Clean up converted temporary file if it was created
+      if (convertedFilePath) {
+        await cleanupConvertedFile(convertedFilePath);
+      }
     }
   },
 });
