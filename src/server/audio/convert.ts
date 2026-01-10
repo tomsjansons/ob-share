@@ -42,18 +42,95 @@ export function requiresConversion(filePath: string): boolean {
 
 /**
  * Get audio duration in seconds using ffprobe
+ * Uses multiple strategies for robustness:
+ * 1. Try format duration (works for most formats)
+ * 2. Fall back to stream duration (needed for some WAV files)
+ * 3. Calculate from file properties (fallback for PCM WAV)
  */
 export async function getAudioDuration(filePath: string): Promise<number> {
   try {
-    const command = `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`;
-    const { stdout } = await execAsync(command, { timeout: 30000 });
-    const duration = parseFloat(stdout.trim());
+    // Strategy 1: Try format duration (works for most formats like webm, mp3)
+    const formatCommand = `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`;
+    const { stdout: formatOutput } = await execAsync(formatCommand, { timeout: 30000 });
+    const formatDuration = parseFloat(formatOutput.trim());
 
-    if (isNaN(duration)) {
-      throw new Error("Could not parse duration from ffprobe output");
+    if (!isNaN(formatDuration) && formatDuration > 0) {
+      logger.debug({
+        event: "audio_convert.duration_from_format",
+        filePath,
+        duration: formatDuration,
+      });
+      return formatDuration;
     }
 
-    return duration;
+    // Strategy 2: Try stream duration (needed for some containers)
+    const streamCommand = `ffprobe -v quiet -select_streams a:0 -show_entries stream=duration -of csv=p=0 "${filePath}"`;
+    const { stdout: streamOutput } = await execAsync(streamCommand, { timeout: 30000 });
+    const streamDuration = parseFloat(streamOutput.trim());
+
+    if (!isNaN(streamDuration) && streamDuration > 0) {
+      logger.debug({
+        event: "audio_convert.duration_from_stream",
+        filePath,
+        duration: streamDuration,
+      });
+      return streamDuration;
+    }
+
+    // Strategy 3: Calculate from WAV file properties (for PCM WAV files)
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".wav") {
+      // Get sample rate, channels, and bits per sample to calculate duration
+      const probeCommand = `ffprobe -v quiet -select_streams a:0 -show_entries stream=sample_rate,channels,bits_per_sample,codec_name -of json "${filePath}"`;
+      const { stdout: probeOutput } = await execAsync(probeCommand, { timeout: 30000 });
+      const probeData = JSON.parse(probeOutput);
+      const stream = probeData?.streams?.[0];
+
+      if (stream?.sample_rate) {
+        const sampleRate = parseInt(stream.sample_rate, 10);
+        const channels = parseInt(stream.channels, 10) || 1;
+        const bitsPerSample = parseInt(stream.bits_per_sample, 10) || 16;
+
+        // Get file size and estimate duration
+        const stats = await fs.stat(filePath);
+        const fileSize = stats.size;
+
+        // WAV header is typically 44 bytes for standard PCM
+        const dataSize = fileSize - 44;
+        const bytesPerSample = bitsPerSample / 8;
+        const bytesPerSecond = sampleRate * channels * bytesPerSample;
+        const calculatedDuration = dataSize / bytesPerSecond;
+
+        if (calculatedDuration > 0) {
+          logger.debug({
+            event: "audio_convert.duration_calculated_wav",
+            filePath,
+            duration: calculatedDuration,
+            sampleRate,
+            channels,
+            bitsPerSample,
+            fileSize,
+          });
+          return calculatedDuration;
+        }
+      }
+    }
+
+    // If all strategies fail, try one more approach: ffprobe with duration calculation
+    const durationCalcCommand = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`;
+    const { stdout: calcOutput } = await execAsync(durationCalcCommand, { timeout: 30000 });
+    const calcDuration = parseFloat(calcOutput.trim());
+
+    if (!isNaN(calcDuration) && calcDuration > 0) {
+      logger.debug({
+        event: "audio_convert.duration_from_calc",
+        filePath,
+        duration: calcDuration,
+      });
+      return calcDuration;
+    }
+
+    throw new Error(`Could not determine duration from ffprobe output (format: '${formatOutput.trim()}', stream: '${streamOutput.trim()}')`);
   } catch (err) {
     logger.error({
       event: "audio_convert.duration_error",
