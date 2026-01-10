@@ -848,7 +848,7 @@ checker.stop();
 | API Key | Used For | Configurable In Settings |
 |---------|----------|--------------------------|
 | `ANTHROPIC_API_KEY` | Image analysis | No (environment variable only) |
-| `OPENAI_API_KEY` | Audio transcription (Whisper API), document analysis | Yes (AI Extraction Settings) |
+| `OPENAI_API_KEY` | Audio transcription (gpt-4o-transcribe-diarize), document analysis | Yes (AI Extraction Settings) |
 | Text LLM API Key | URL summarization and content extraction | Yes (URL Summarization Settings) |
 
 **Note:** URL summarization supports both Anthropic and OpenAI providers. Users can configure their preferred provider, API key, and model in Settings → URL Summarization Settings.
