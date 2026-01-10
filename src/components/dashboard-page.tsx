@@ -9,6 +9,7 @@ import { Mic, AlertTriangle, Settings } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AvatarDropdown } from "@/components/avatar-dropdown";
 import { AudioPermissionModal } from "@/components/audio-permission-modal";
+import { BrowserExtensionCard } from "@/components/browser-extension-card";
 import { trpc } from "@/lib/trpc/client";
 import { isAudioRecordingSupported } from "@/lib/audio";
 
@@ -149,6 +150,11 @@ export function DashboardPage({ user }: DashboardPageProps) {
               </CardContent>
             </Card>
           )}
+
+          {/* Browser Extension Download */}
+          <div className="mt-8">
+            <BrowserExtensionCard />
+          </div>
 
           {/* Welcome message */}
           <p className="text-sm text-muted-foreground mt-8 text-center">

@@ -108,9 +108,16 @@ ob-share/
 │           │   ├── file-tools.ts # File system tools
 │           │   └── http-tools.ts # HTTP request tools
 │           └── examples/        # Example workflows
+├── chrome-extension/       # Browser extension for desktop sharing
+│   ├── manifest.json       # Extension manifest (Manifest V3)
+│   ├── background.js       # Service worker for handling shares
+│   ├── options.html        # Settings page
+│   ├── note-popup.html     # Share with note popup
+│   └── icons/              # Extension icons
 ├── drizzle/                # Database migrations
 ├── scripts/
-│   └── migrate.ts          # Database migration and seeding script
+│   ├── migrate.ts          # Database migration and seeding script
+│   └── generate-extension-icons.ts # Icon generation for extension
 ├── public/
 │   ├── manifest.json       # PWA manifest with share target
 │   ├── icon-192.svg        # PWA icon (192x192)
@@ -635,6 +642,45 @@ The PWA is configured in:
 - `public/manifest.json` - App manifest with share target config
 - `next.config.ts` - PWA plugin configuration
 - `src/app/layout.tsx` - Meta tags and theme colors
+
+## Browser Extension (Chrome/Vivaldi)
+
+For desktop browsers, ob-share provides a private Chrome extension for one-click sharing.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| One-click share | Click the extension icon to instantly share the current page |
+| Share with note | Add context or notes when sharing via right-click menu |
+| Share links | Right-click any link to share it directly |
+| Share selection | Select text and share it as a note |
+| Configurable URL | Point to your own ob-share instance |
+
+### Installing the Extension
+
+1. **Download**: Click "Download Extension" from the dashboard
+2. **Extract**: Unzip `ob-share-extension.zip` to a folder
+3. **Open Extensions**: Navigate to `chrome://extensions` in your browser
+4. **Developer Mode**: Enable the toggle in the top-right corner
+5. **Load**: Click "Load unpacked" and select the extracted folder
+
+The extension works with Chrome, Vivaldi, Edge, Brave, and other Chromium-based browsers.
+
+### Using the Extension
+
+| Action | How To |
+|--------|--------|
+| Quick share | Click the extension icon in the toolbar |
+| Share with note | Right-click on page → "Share with note..." |
+| Share a link | Right-click on any link → "Share this link to ob-share" |
+| Share selected text | Select text → Right-click → "Share selection to ob-share" |
+| Settings | Right-click on page → "Settings" |
+
+### Extension Settings
+
+Access settings via the right-click context menu to configure:
+- **ob-share URL**: Your ob-share instance URL (default: `https://ob-share.up.railway.app`)
 
 ## Troubleshooting
 
