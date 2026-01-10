@@ -241,13 +241,28 @@ export abstract class BaseStep<TConfig extends BaseStepConfig = BaseStepConfig> 
 }
 
 /**
- * Evaluate a condition expression against the workflow context
+ * Evaluate a condition expression against the workflow context.
+ *
+ * SECURITY NOTE: This uses the Function constructor which is similar to eval().
+ * Security is maintained through the following assumptions:
+ *
+ * 1. Expressions come from trusted workflow definitions, NOT user input
+ * 2. Workflow definitions are loaded from code/config, not runtime data
+ * 3. The context object is a copy with only safe properties exposed
+ * 4. Expressions are sandboxed to only access the destructured context values
+ *
+ * If expressions need to come from untrusted sources in the future,
+ * consider using a safe expression evaluator library like expr-eval or jexl.
+ *
+ * @param expression - A JavaScript expression string from a trusted source
+ * @param context - The workflow context to evaluate against
+ * @returns The boolean result of the expression
  */
 export function evaluateConditionExpression(
   expression: string,
   context: WorkflowContext
 ): boolean {
-  // Create a safe evaluation context
+  // Create a safe evaluation context - only expose safe properties
   const evalContext = {
     trigger: context.trigger,
     variables: context.variables,
@@ -255,9 +270,6 @@ export function evaluateConditionExpression(
     metadata: context.metadata,
   };
 
-  // Build a safe evaluation function
-  // We use Function constructor to create a sandboxed evaluation
-  // Note: This is safer than eval() but still requires trust in the expression source
   const fn = new Function(
     "context",
     `

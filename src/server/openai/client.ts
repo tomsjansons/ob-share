@@ -45,6 +45,7 @@ export interface DiarizedSegment {
 export interface DiarizedTranscriptionResult {
   text: string;
   segments: DiarizedSegment[];
+  duration?: number; // Duration in seconds (may not always be present)
 }
 
 /**
@@ -152,13 +153,14 @@ export class OpenAIClient {
       // Use the SDK with createReadStream for proper file upload
       // response_format: "diarized_json" returns segments with speaker labels
       // chunking_strategy: "auto" is required for audio longer than 30 seconds
-      const response = await openai.audio.transcriptions.create({
+      // Note: SDK types don't include diarized_json yet, but API accepts it
+      const response = await (openai.audio.transcriptions.create as (params: unknown) => Promise<unknown>)({
         file: createReadStream(filePath),
         model,
-        response_format: "diarized_json" as "json", // SDK types don't include diarized_json yet, but API accepts it
-        chunking_strategy: "auto" as unknown as undefined, // Required for audio > 30 seconds
+        response_format: "diarized_json",
+        chunking_strategy: "auto", // Required for audio > 30 seconds
         ...(options?.language && { language: options.language }),
-      } as Parameters<typeof openai.audio.transcriptions.create>[0]) as unknown as DiarizedTranscriptionResult;
+      }) as DiarizedTranscriptionResult;
 
       logger.info({
         event: "openai.transcribeDiarize.complete",

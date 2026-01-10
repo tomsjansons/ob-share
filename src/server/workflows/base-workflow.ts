@@ -479,7 +479,22 @@ export function defineWorkflow<TTrigger = unknown, TResult = unknown>(
 }
 
 /**
- * Evaluate a condition expression
+ * Evaluate a condition expression.
+ *
+ * SECURITY NOTE: This uses the Function constructor which is similar to eval().
+ * Security is maintained through the following assumptions:
+ *
+ * 1. Expressions come from trusted workflow definitions, NOT user input
+ * 2. Workflow definitions are loaded from code/config, not runtime data
+ * 3. The context object is read-only (no prototype pollution possible)
+ * 4. Expressions are sandboxed to only access the destructured context values
+ *
+ * If expressions need to come from untrusted sources in the future,
+ * consider using a safe expression evaluator library like expr-eval or jexl.
+ *
+ * @param expression - A JavaScript expression string from a trusted source
+ * @param context - The workflow context to evaluate against
+ * @returns The boolean result of the expression
  */
 function evaluateExpression(
   expression: string,

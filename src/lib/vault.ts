@@ -6,8 +6,8 @@ import { buildMarkdown } from "./frontmatter";
 // Create a child logger for vault operations
 const vaultLogger = logger.child({ module: "vault" });
 
-// Base path for vault storage
-const DATA_ROOT = "/data/Documents";
+// Base path for vault storage - configurable via environment variable
+const DATA_ROOT = process.env.VAULT_DATA_ROOT ?? "/data/Documents";
 
 export interface VaultConfig {
   vaultName: string;

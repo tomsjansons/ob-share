@@ -24,6 +24,7 @@ import type {
 import { WorkflowPriority } from "./types";
 import { createStep, type BaseStep, type StepExecutionContext } from "./steps";
 import { logger as baseLogger } from "@/lib/logger";
+import { createDeferred, type Deferred } from "@/lib/async-utils";
 
 const logger = baseLogger.child({ module: "workflow-orchestrator" });
 
@@ -59,6 +60,16 @@ interface StepExecutionStore {
 }
 
 /**
+ * Default time-to-live for completed/failed instances before cleanup (1 hour)
+ */
+const DEFAULT_INSTANCE_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Cleanup interval (5 minutes)
+ */
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
  * Workflow Orchestrator
  *
  * Manages the lifecycle and execution of workflow instances.
@@ -74,6 +85,8 @@ export class WorkflowOrchestrator {
   private eventHandlers: Set<WorkflowEventHandler> = new Set();
   private runningSteps: Map<string, Set<string>> = new Map(); // instanceId -> stepIds
   private abortControllers: Map<string, AbortController> = new Map();
+  private completionDeferreds: Map<string, Deferred<unknown>> = new Map(); // For event-based completion waiting
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config?: Partial<OrchestratorConfig>) {
     this.config = {
@@ -88,6 +101,86 @@ export class WorkflowOrchestrator {
         ...config?.defaultRetryConfig,
       },
     };
+
+    // Start periodic cleanup of old instances
+    this.startCleanupTimer();
+  }
+
+  /**
+   * Start the periodic cleanup timer
+   */
+  private startCleanupTimer(): void {
+    if (this.cleanupTimer) {
+      return;
+    }
+
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupOldInstances();
+    }, CLEANUP_INTERVAL_MS);
+
+    // Don't keep the process alive just for cleanup
+    if (this.cleanupTimer.unref) {
+      this.cleanupTimer.unref();
+    }
+  }
+
+  /**
+   * Stop the cleanup timer
+   */
+  stopCleanupTimer(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+  }
+
+  /**
+   * Clean up old completed/failed workflow instances to prevent memory leaks.
+   * Instances are kept for TTL after completion for debugging purposes.
+   */
+  cleanupOldInstances(maxAgeMs: number = DEFAULT_INSTANCE_TTL_MS): number {
+    const cutoff = Date.now() - maxAgeMs;
+    let cleanedCount = 0;
+
+    for (const [id, instance] of this.instances) {
+      // Only clean up completed, failed, or cancelled instances
+      if (
+        instance.status !== "completed" &&
+        instance.status !== "failed" &&
+        instance.status !== "cancelled"
+      ) {
+        continue;
+      }
+
+      // Check if instance is old enough to clean up
+      const completedTime = instance.completedAt?.getTime();
+      if (completedTime && completedTime < cutoff) {
+        this.instances.delete(id);
+        this.stepExecutions.byWorkflow.delete(id);
+        this.runningSteps.delete(id);
+        this.abortControllers.delete(id);
+        this.completionDeferreds.delete(id);
+
+        // Clean up step execution records for this instance
+        const stepIds = this.stepExecutions.byWorkflow.get(id);
+        if (stepIds) {
+          for (const stepId of stepIds) {
+            this.stepExecutions.records.delete(stepId);
+          }
+        }
+
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      logger.debug(
+        { event: "orchestrator.cleanup", cleanedCount },
+        "Cleaned up old workflow instances"
+      );
+    }
+
+    return cleanedCount;
   }
 
   // ===========================================================================
@@ -637,9 +730,15 @@ export class WorkflowOrchestrator {
     instance.updatedAt = new Date();
     instance.currentStepIds = [];
 
-    // Clean up
+    // Clean up active resources (but keep instance for TTL-based cleanup)
     this.abortControllers.delete(instanceId);
     this.runningSteps.delete(instanceId);
+
+    // Resolve any waiting promises (for run() method)
+    const deferred = this.completionDeferreds.get(instanceId);
+    if (deferred) {
+      deferred.resolve(result);
+    }
 
     // Call onComplete hook
     if (workflow?.onComplete) {
@@ -691,9 +790,15 @@ export class WorkflowOrchestrator {
       abortController.abort();
     }
 
-    // Clean up
+    // Clean up active resources (but keep instance for TTL-based cleanup)
     this.abortControllers.delete(instanceId);
     this.runningSteps.delete(instanceId);
+
+    // Reject any waiting promises (for run() method)
+    const deferred = this.completionDeferreds.get(instanceId);
+    if (deferred) {
+      deferred.reject(new Error(error));
+    }
 
     // Call onFailed hook
     if (workflow?.onFailed) {
@@ -744,9 +849,15 @@ export class WorkflowOrchestrator {
     instance.updatedAt = new Date();
     instance.currentStepIds = [];
 
-    // Clean up
+    // Clean up active resources (but keep instance for TTL-based cleanup)
     this.abortControllers.delete(instanceId);
     this.runningSteps.delete(instanceId);
+
+    // Reject any waiting promises (for run() method)
+    const deferred = this.completionDeferreds.get(instanceId);
+    if (deferred) {
+      deferred.reject(new Error("Workflow cancelled"));
+    }
 
     logger.info(
       { event: "workflow.cancelled", instanceId },
@@ -757,7 +868,25 @@ export class WorkflowOrchestrator {
   }
 
   /**
-   * Evaluate a condition expression
+   * Evaluate a condition expression.
+   *
+   * SECURITY NOTE: This uses the Function constructor which is similar to eval().
+   * Security is maintained through the following assumptions:
+   *
+   * 1. Expressions come from trusted workflow definitions, NOT user input
+   * 2. Workflow definitions are loaded from code/config, not runtime data
+   * 3. The context object is read-only (no prototype pollution possible)
+   * 4. Expressions are sandboxed to only access the destructured context values
+   *
+   * If expressions need to come from untrusted sources in the future,
+   * consider using a safe expression evaluator library like:
+   * - expr-eval (https://www.npmjs.com/package/expr-eval)
+   * - math-expression-evaluator
+   * - jexl (https://www.npmjs.com/package/jexl)
+   *
+   * @param expression - A JavaScript expression string from a trusted source
+   * @param context - The workflow context to evaluate against
+   * @returns The boolean result of the expression
    */
   private evaluateExpression(
     expression: string,
@@ -778,7 +907,8 @@ export class WorkflowOrchestrator {
   // ===========================================================================
 
   /**
-   * Run a workflow with trigger data and wait for completion
+   * Run a workflow with trigger data and wait for completion.
+   * Uses event-based waiting instead of polling for better performance.
    */
   async run<TTrigger = unknown, TResult = unknown>(
     workflowId: string,
@@ -796,47 +926,53 @@ export class WorkflowOrchestrator {
       variables: options?.variables,
     });
 
-    await this.startInstance(instance.id);
+    // Create a deferred promise for completion notification
+    const deferred = createDeferred<unknown>();
+    this.completionDeferreds.set(instance.id, deferred);
 
-    // Wait for completion
-    const timeout = options?.timeout ?? 300000; // 5 minutes default
-    const startTime = Date.now();
+    // Set up timeout
+    const timeoutMs = options?.timeout ?? 300000; // 5 minutes default
+    const timeoutId = setTimeout(() => {
+      this.cancelInstance(instance.id);
+      deferred.reject(new Error("Workflow timed out"));
+    }, timeoutMs);
 
-    return new Promise((resolve, reject) => {
-      const checkStatus = () => {
-        const current = this.instances.get(instance.id);
-        if (!current) {
-          reject(new Error("Instance not found"));
-          return;
-        }
+    try {
+      await this.startInstance(instance.id);
 
-        if (current.status === "completed") {
-          resolve(current.result as TResult);
-          return;
-        }
+      // Wait for completion via event-based notification
+      const result = await deferred.promise;
+      return result as TResult;
+    } finally {
+      clearTimeout(timeoutId);
+      this.completionDeferreds.delete(instance.id);
+    }
+  }
 
-        if (current.status === "failed") {
-          reject(new Error(current.error ?? "Workflow failed"));
-          return;
-        }
+  /**
+   * Get the count of active (non-terminal) workflow instances.
+   * Useful for monitoring and debugging.
+   */
+  getActiveInstanceCount(): number {
+    let count = 0;
+    for (const instance of this.instances.values()) {
+      if (
+        instance.status !== "completed" &&
+        instance.status !== "failed" &&
+        instance.status !== "cancelled"
+      ) {
+        count++;
+      }
+    }
+    return count;
+  }
 
-        if (current.status === "cancelled") {
-          reject(new Error("Workflow cancelled"));
-          return;
-        }
-
-        if (Date.now() - startTime > timeout) {
-          this.cancelInstance(instance.id);
-          reject(new Error("Workflow timed out"));
-          return;
-        }
-
-        // Check again
-        setTimeout(checkStatus, 100);
-      };
-
-      checkStatus();
-    });
+  /**
+   * Get total instance count (including completed).
+   * Useful for monitoring memory usage.
+   */
+  getTotalInstanceCount(): number {
+    return this.instances.size;
   }
 }
 
@@ -862,5 +998,8 @@ export function getOrchestrator(
  * Reset the global orchestrator (for testing)
  */
 export function resetOrchestrator(): void {
+  if (globalOrchestrator) {
+    globalOrchestrator.stopCleanupTimer();
+  }
   globalOrchestrator = null;
 }

@@ -222,6 +222,7 @@ pnpm dev
 | `GITHUB_CLIENT_SECRET` | (required) | GitHub OAuth client secret |
 | `LOG_LEVEL` | `debug` (dev) / `info` (prod) | Logging level (trace, debug, info, warn, error, fatal) |
 | `ALLOW_LIST_USERS` | (empty) | Comma-separated GitHub usernames for allow list seeding |
+| `VAULT_DATA_ROOT` | `/data/Documents` | Base path for vault storage (customizable for testing) |
 
 **Note:** Vault path configuration has moved to in-app settings. See [Vault Settings](#vault-settings) below.
 

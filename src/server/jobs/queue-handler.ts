@@ -14,6 +14,7 @@ import { db } from "../db";
 import { jobs, jobPhases, queueHandlerHeartbeat, queueLock } from "../db/schema";
 import { eq, and, lte, or, sql, isNull, asc } from "drizzle-orm";
 import { logger as baseLogger } from "@/lib/logger";
+import { yieldToEventLoop, settleAll } from "@/lib/async-utils";
 import type {
   QueueHandlerConfig,
   QueueStats,
@@ -29,14 +30,6 @@ import { TaskRunner } from "./task-runner";
 const logger = baseLogger.child({ module: "queue-handler" });
 
 /**
- * Yield to the event loop to allow HTTP requests to be processed.
- * This is necessary because better-sqlite3 is synchronous and blocks the event loop.
- */
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
-
-/**
  * Queue Handler manages the lifecycle of background job processing.
  */
 export class QueueHandler {
@@ -46,6 +39,7 @@ export class QueueHandler {
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private currentJobs: Map<string, AbortController> = new Map();
+  private runningJobPromises: Map<string, Promise<void>> = new Map(); // Track running job promises for graceful shutdown
   private eventHandlers: QueueEventHandler[] = [];
   private taskRunner: TaskRunner;
 
@@ -92,17 +86,43 @@ export class QueueHandler {
     };
   }
 
-  private emit(event: QueueEvent): void {
+  /**
+   * Emit an event to all registered handlers.
+   * Handlers are called concurrently and errors are logged but don't interrupt processing.
+   */
+  private async emitAsync(event: QueueEvent): Promise<void> {
+    const promises: Promise<void>[] = [];
+
     for (const handler of this.eventHandlers) {
       try {
         const result = handler(event);
         if (result instanceof Promise) {
-          result.catch((err) => logger.error({ event: "queue.event.error", err, eventType: event.type }, "Event handler error"));
+          promises.push(
+            result.catch((err) => {
+              logger.error({ event: "queue.event.error", err, eventType: event.type }, "Event handler error");
+            })
+          );
         }
       } catch (err) {
         logger.error({ event: "queue.event.error", err, eventType: event.type }, "Event handler error");
       }
     }
+
+    // Wait for all handlers to complete
+    if (promises.length > 0) {
+      await Promise.all(promises);
+    }
+  }
+
+  /**
+   * Emit an event synchronously (fire-and-forget).
+   * Use emitAsync when you need to wait for handlers.
+   */
+  private emit(event: QueueEvent): void {
+    // Fire-and-forget for non-critical events
+    this.emitAsync(event).catch((err) => {
+      logger.error({ event: "queue.emit.error", err }, "Error emitting event");
+    });
   }
 
   /**
@@ -136,7 +156,8 @@ export class QueueHandler {
   }
 
   /**
-   * Stop the queue handler gracefully
+   * Stop the queue handler gracefully.
+   * Waits for running jobs to complete (up to shutdownTimeout).
    */
   async stop(): Promise<void> {
     if (!this.isRunning || this.isStopping) {
@@ -144,9 +165,10 @@ export class QueueHandler {
     }
 
     this.isStopping = true;
-    logger.debug({ event: "queue.handler.stopping", handlerId: this.config.handlerId }, "Queue handler stopping");
+    const runningJobCount = this.runningJobPromises.size;
+    logger.debug({ event: "queue.handler.stopping", handlerId: this.config.handlerId, runningJobs: runningJobCount }, "Queue handler stopping");
 
-    // Stop polling
+    // Stop polling - no new jobs will be picked up
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
@@ -158,18 +180,35 @@ export class QueueHandler {
       this.heartbeatTimer = null;
     }
 
-    // Cancel all running jobs
+    // Signal all running jobs to abort (graceful cancellation)
     for (const [jobId, controller] of this.currentJobs) {
-      logger.info({ event: "job.cancelling", jobId, handlerId: this.config.handlerId }, "Cancelling job");
+      logger.info({ event: "job.cancelling", jobId, handlerId: this.config.handlerId }, "Signalling job to stop");
       controller.abort();
     }
 
-    // Wait for jobs to complete (with timeout)
-    const deadline = Date.now() + this.config.shutdownTimeout;
-    while (this.currentJobs.size > 0 && Date.now() < deadline) {
-      // Yield to event loop to keep HTTP responsive during shutdown
-      await yieldToEventLoop();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    // Wait for running jobs to complete, using tracked promises
+    if (this.runningJobPromises.size > 0) {
+      logger.debug({ event: "queue.handler.waiting_for_jobs", count: this.runningJobPromises.size }, "Waiting for running jobs to complete");
+
+      // Create a timeout promise
+      const timeoutPromise = new Promise<void>((resolve) => {
+        setTimeout(resolve, this.config.shutdownTimeout);
+      });
+
+      // Wait for all jobs or timeout
+      const allJobsPromise = Promise.allSettled(
+        Array.from(this.runningJobPromises.values())
+      );
+
+      await Promise.race([allJobsPromise, timeoutPromise]);
+
+      // Log if any jobs are still running after timeout
+      if (this.runningJobPromises.size > 0) {
+        logger.warn({
+          event: "queue.handler.shutdown_timeout",
+          remainingJobs: Array.from(this.runningJobPromises.keys()),
+        }, "Shutdown timeout reached with jobs still running");
+      }
     }
 
     // IMPORTANT: Move any remaining processing jobs to stalled state immediately
@@ -181,8 +220,9 @@ export class QueueHandler {
 
     this.isRunning = false;
     this.isStopping = false;
+    this.runningJobPromises.clear();
 
-    this.emit({ type: "handler:stopped", handlerId: this.config.handlerId });
+    await this.emitAsync({ type: "handler:stopped", handlerId: this.config.handlerId });
     logger.debug({ event: "queue.handler.stopped", handlerId: this.config.handlerId, jobsProcessed: this.stats.jobsProcessed, jobsFailed: this.stats.jobsFailed }, "Queue handler stopped");
   }
 
@@ -378,10 +418,14 @@ export class QueueHandler {
           jobId: job.id,
           jobType: job.type,
         });
-        // Process job in background (don't await)
-        this.processJob(job as JobRecord).catch((err) => {
+        // Process job in background (don't await) but track the promise for graceful shutdown
+        const jobPromise = this.processJob(job as JobRecord).catch((err) => {
           logger.error({ event: "job.process.error", jobId: job.id, jobType: job.type, err }, "Error processing job");
+        }).finally(() => {
+          // Remove from tracking when done
+          this.runningJobPromises.delete(job.id);
         });
+        this.runningJobPromises.set(job.id, jobPromise);
       } else {
         // Log at info level to help diagnose claim failures
         logger.info({
@@ -405,9 +449,21 @@ export class QueueHandler {
   }
 
   /**
-   * Claim a job for processing by setting visibility timeout
+   * Claim a job for processing using optimistic locking.
+   * Returns true if successfully claimed, false if another handler got it first.
+   *
+   * RACE CONDITION PROTECTION:
+   * This uses an atomic UPDATE with a WHERE clause that checks the job is still
+   * in the expected state (pending/stalled with visibleAt <= referenceTime).
+   * If another handler already claimed the job (changed status to 'processing'
+   * and updated visibleAt), this UPDATE will not match any rows.
+   *
+   * This is a standard optimistic locking pattern for distributed job queues
+   * that prevents duplicate processing without requiring database-level locks.
+   *
    * @param jobId - The job ID to claim
    * @param referenceTime - The reference time to use for visibility check (should match the SELECT query time)
+   * @returns true if the job was successfully claimed, false if another handler claimed it first
    */
   private async claimJob(jobId: string, referenceTime?: Date): Promise<boolean> {
     const now = referenceTime || new Date();

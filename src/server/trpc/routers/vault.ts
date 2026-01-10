@@ -76,6 +76,7 @@ export const vaultRouter = router({
 
       // Convert data URLs to buffers for file saving
       const vaultFiles: VaultFile[] = [];
+      const failedConversions: Array<{ name: string; error: string }> = [];
 
       if (input.files) {
         for (const file of input.files) {
@@ -92,10 +93,13 @@ export const vaultRouter = router({
               file: sanitizeFileForLogging({ name: file.name, type: mimeType, size: buffer.length }),
             });
           } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            failedConversions.push({ name: file.name, error: errorMessage });
+
             logger.error({
               event: "vault.save.file_conversion_error",
               file: sanitizeFileForLogging(file),
-              error: error instanceof Error ? error.message : "Unknown error",
+              error: errorMessage,
             });
           }
         }
@@ -115,6 +119,7 @@ export const vaultRouter = router({
           event: "vault.save.complete",
           notePath: result.notePath,
           savedFilesCount: result.savedFiles?.length ?? 0,
+          failedFileCount: failedConversions.length,
         });
       } else {
         logger.error({
@@ -123,6 +128,10 @@ export const vaultRouter = router({
         });
       }
 
-      return result;
+      // Include information about failed file conversions in the response
+      return {
+        ...result,
+        failedFiles: failedConversions.length > 0 ? failedConversions : undefined,
+      };
     }),
 });
