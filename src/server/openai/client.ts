@@ -2,20 +2,17 @@
  * OpenAI API Client - Handles all OpenAI API interactions
  *
  * Provides a configurable client for:
- * - Audio transcription (Whisper)
- * - Multimodal content analysis (GPT-4o with audio/vision)
+ * - Audio transcription with diarization (GPT-4o-transcribe-diarize)
+ * - Chat completions (GPT-4o)
  */
 
-import { promises as fs } from "fs";
 import { createReadStream } from "fs";
-import path from "path";
 import { logger as baseLogger } from "@/lib/logger";
 import OpenAI from "openai";
 
 const logger = baseLogger.child({ module: "openai-client" });
 
 // Default models
-export const DEFAULT_WHISPER_MODEL = "whisper-1";
 export const DEFAULT_AUDIO_MODEL = "gpt-4o-transcribe-diarize";
 export const DEFAULT_VISION_MODEL = "gpt-4o";
 
@@ -28,32 +25,6 @@ export interface OpenAIConfig {
   baseUrl?: string;
   model?: string;
   timeout?: number;
-}
-
-/**
- * Audio transcription options
- */
-export interface TranscriptionOptions {
-  model?: string;
-  language?: string;
-  prompt?: string;
-  responseFormat?: "json" | "text" | "srt" | "verbose_json" | "vtt";
-  temperature?: number;
-}
-
-/**
- * Transcription result
- */
-export interface TranscriptionResult {
-  text: string;
-  language?: string;
-  duration?: number;
-  segments?: Array<{
-    id: number;
-    start: number;
-    end: number;
-    text: string;
-  }>;
 }
 
 /**
@@ -88,7 +59,6 @@ export interface DiarizedTranscriptionResult {
 export interface DiarizeTranscriptionOptions {
   model?: string;
   language?: string;
-  chunkingStrategy?: "auto" | { type: "server_vad"; [key: string]: unknown };
 }
 
 /**
@@ -104,8 +74,7 @@ export interface ChatMessage {
  */
 export type ChatContentPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }
-  | { type: "input_audio"; input_audio: { data: string; format: "wav" | "mp3" } };
+  | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } };
 
 /**
  * Chat completion options
@@ -145,7 +114,7 @@ export class OpenAIClient {
   constructor(config: OpenAIConfig) {
     this.config = {
       apiKey: config.apiKey,
-      baseUrl: config.baseUrl, // Only set if explicitly provided (for Azure/proxies)
+      baseUrl: config.baseUrl,
       model: config.model,
       timeout: config.timeout ?? 120000,
     };
@@ -160,83 +129,6 @@ export class OpenAIClient {
       ...(this.config.baseUrl && { baseURL: this.config.baseUrl }),
       timeout: this.config.timeout,
     });
-  }
-
-  /**
-   * Transcribe audio file using Whisper API
-   * Uses the official OpenAI SDK with fs.createReadStream for proper file upload
-   */
-  async transcribe(
-    filePath: string,
-    options?: TranscriptionOptions
-  ): Promise<TranscriptionResult> {
-    const model = options?.model ?? DEFAULT_WHISPER_MODEL;
-
-    logger.info({
-      event: "openai.transcribe.start",
-      filePath,
-      model,
-    });
-
-    try {
-      const openai = this.createClient();
-
-      // Use the official SDK with fs.createReadStream (the recommended approach)
-      const transcriptionOptions: OpenAI.Audio.TranscriptionCreateParams = {
-        file: createReadStream(filePath),
-        model,
-        response_format: options?.responseFormat ?? "verbose_json",
-      };
-
-      if (options?.language) {
-        transcriptionOptions.language = options.language;
-      }
-      if (options?.prompt) {
-        transcriptionOptions.prompt = options.prompt;
-      }
-      if (options?.temperature !== undefined) {
-        transcriptionOptions.temperature = options.temperature;
-      }
-
-      const data = await openai.audio.transcriptions.create(transcriptionOptions);
-
-      // Handle different response formats
-      // For verbose_json, we get an object with text, language, duration, segments
-      // For text, we get just a string
-      // Cast to record to access verbose_json fields that aren't in the basic type
-      const verboseData = data as unknown as {
-        text: string;
-        language?: string;
-        duration?: number;
-        segments?: Array<{ id: number; start: number; end: number; text: string }>;
-      };
-
-      logger.info({
-        event: "openai.transcribe.complete",
-        language: verboseData.language,
-        duration: verboseData.duration,
-        textLength: verboseData.text?.length,
-      });
-
-      return {
-        text: verboseData.text || "",
-        language: verboseData.language,
-        duration: verboseData.duration,
-        segments: verboseData.segments?.map((s) => ({
-          id: s.id,
-          start: s.start,
-          end: s.end,
-          text: s.text,
-        })),
-      };
-    } catch (err) {
-      logger.error({
-        event: "openai.transcribe.error",
-        filePath,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
-    }
   }
 
   /**
@@ -279,191 +171,6 @@ export class OpenAIClient {
     } catch (err) {
       logger.error({
         event: "openai.transcribeDiarize.error",
-        filePath,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
-    }
-  }
-
-  /**
-   * Analyze audio using multimodal model (GPT-4o with audio)
-   * Uses direct fetch to Chat Completions API with input_audio content type
-   */
-  async analyzeAudio(
-    filePath: string,
-    prompt: string,
-    options?: ChatCompletionOptions
-  ): Promise<ChatCompletionResult> {
-    const model = options?.model ?? this.config.model ?? DEFAULT_AUDIO_MODEL;
-
-    logger.info({
-      event: "openai.analyzeAudio.start",
-      filePath,
-      model,
-    });
-
-    try {
-      // Read and encode audio file
-      const audioBuffer = await fs.readFile(filePath);
-      const base64Audio = audioBuffer.toString("base64");
-      const audioFormat = this.getAudioFormat(filePath);
-
-      logger.info({
-        event: "openai.analyzeAudio.encoded",
-        filePath,
-        audioFormat,
-        bufferSize: audioBuffer.length,
-        base64Length: base64Audio.length,
-      });
-
-      // Check if audio data is valid
-      if (audioBuffer.length === 0) {
-        throw new Error("Audio file is empty");
-      }
-
-      // Use direct fetch to match OpenAI docs format exactly
-      const requestBody = {
-        model,
-        modalities: ["text", "audio"],
-        audio: { voice: "alloy", format: "wav" },
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              {
-                type: "input_audio",
-                input_audio: {
-                  data: base64Audio,
-                  format: audioFormat,
-                },
-              },
-            ],
-          },
-        ],
-        max_tokens: options?.maxTokens ?? 4096,
-        temperature: options?.temperature ?? 0.3,
-      };
-
-      logger.info({
-        event: "openai.analyzeAudio.request",
-        model,
-        audioFormat,
-        hasAudioData: base64Audio.length > 0,
-        messageContentTypes: requestBody.messages[0].content.map(c => c.type),
-      });
-
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
-      }
-
-      const data = await response.json();
-      const choice = data.choices?.[0];
-
-      // Log the full response structure for debugging
-      logger.info({
-        event: "openai.analyzeAudio.rawResponse",
-        filePath,
-        hasChoices: !!data.choices,
-        choiceCount: data.choices?.length ?? 0,
-        messageKeys: choice?.message ? Object.keys(choice.message) : [],
-        hasContent: !!choice?.message?.content,
-        hasAudio: !!choice?.message?.audio,
-        contentType: typeof choice?.message?.content,
-        contentPreview: typeof choice?.message?.content === 'string'
-          ? choice.message.content.slice(0, 300)
-          : JSON.stringify(choice?.message?.content)?.slice(0, 300),
-      });
-
-      // Content might be in different places depending on the response
-      const content = choice?.message?.content ?? "";
-
-      logger.info({
-        event: "openai.analyzeAudio.complete",
-        filePath,
-        responseLength: content.length,
-        finishReason: choice?.finish_reason,
-      });
-
-      return {
-        content,
-        model: data.model,
-        usage: data.usage
-          ? {
-              promptTokens: data.usage.prompt_tokens,
-              completionTokens: data.usage.completion_tokens,
-              totalTokens: data.usage.total_tokens,
-            }
-          : undefined,
-        finishReason: choice?.finish_reason,
-      };
-    } catch (err) {
-      logger.error({
-        event: "openai.analyzeAudio.error",
-        filePath,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
-    }
-  }
-
-  /**
-   * Analyze image using vision model
-   */
-  async analyzeImage(
-    filePath: string,
-    prompt: string,
-    options?: ChatCompletionOptions
-  ): Promise<ChatCompletionResult> {
-    const model = options?.model ?? this.config.model ?? DEFAULT_VISION_MODEL;
-
-    logger.info({
-      event: "openai.analyzeImage.start",
-      filePath,
-      model,
-    });
-
-    try {
-      // Read and encode image file
-      const imageBuffer = await fs.readFile(filePath);
-      const base64Image = imageBuffer.toString("base64");
-      const mimeType = this.getMimeType(filePath);
-
-      // Build message with image
-      const messages: ChatMessage[] = [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
-                detail: "high",
-              },
-            },
-            {
-              type: "text",
-              text: prompt,
-            },
-          ],
-        },
-      ];
-
-      return this.chatCompletion(messages, { ...options, model });
-    } catch (err) {
-      logger.error({
-        event: "openai.analyzeImage.error",
         filePath,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -538,49 +245,6 @@ export class OpenAIClient {
       throw err;
     }
   }
-
-  /**
-   * Get MIME type for a file
-   */
-  private getMimeType(filePath: string): string {
-    const ext = path.extname(filePath).toLowerCase();
-    const mimeTypes: Record<string, string> = {
-      ".mp3": "audio/mpeg",
-      ".wav": "audio/wav",
-      ".ogg": "audio/ogg",
-      ".webm": "audio/webm",
-      ".m4a": "audio/mp4",
-      ".mp4": "video/mp4",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".png": "image/png",
-      ".gif": "image/gif",
-      ".webp": "image/webp",
-    };
-    return mimeTypes[ext] ?? "application/octet-stream";
-  }
-
-  /**
-   * Get audio format for multimodal API
-   */
-  private getAudioFormat(filePath: string): "wav" | "mp3" {
-    const ext = path.extname(filePath).toLowerCase();
-    if (ext === ".wav") return "wav";
-    return "mp3"; // Default to mp3 for other formats
-  }
-}
-
-/**
- * Create an OpenAI client from user settings
- */
-export function createOpenAIClient(
-  apiKey: string,
-  model?: string
-): OpenAIClient {
-  return new OpenAIClient({
-    apiKey,
-    model,
-  });
 }
 
 /**
