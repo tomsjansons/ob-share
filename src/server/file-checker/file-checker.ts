@@ -178,6 +178,85 @@ export function isReadyForRetry(data: Record<string, unknown>): boolean {
 }
 
 /**
+ * Default timeout for files stuck in "extracting" status (5 minutes)
+ * This matches the workflow execution timeout
+ */
+const STUCK_EXTRACTING_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Check if a file is stuck in "extracting" status and should be recovered
+ *
+ * Files can get stuck in "extracting" when:
+ * 1. The workflow crashes before updating the status
+ * 2. The error handler fails to update the status properly
+ * 3. The workflow times out without proper cleanup
+ *
+ * This function checks if a file has been in "extracting" status for too long
+ * by looking at:
+ * - next-retry-at: If set and in the past, the error handler ran but status wasn't updated
+ * - last-error-at: If set and older than timeout, the file is stuck
+ */
+export function isStuckExtracting(data: Record<string, unknown>): boolean {
+  // Normalize status to handle whitespace/case variations
+  const rawStatus = data.status;
+  const normalizedStatus = typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : rawStatus;
+
+  if (normalizedStatus !== "extracting") {
+    return false;
+  }
+
+  const now = Date.now();
+
+  // Check if next-retry-at is set and in the past
+  // This indicates the error handler ran but the status wasn't properly set to "retry"
+  const nextRetryAt = data["next-retry-at"];
+  if (nextRetryAt && typeof nextRetryAt === "string") {
+    const retryTime = new Date(nextRetryAt);
+    if (!isNaN(retryTime.getTime()) && now >= retryTime.getTime()) {
+      logger.info({
+        event: "file-checker.stuck_extracting_detected",
+        reason: "next-retry-at in past",
+        nextRetryAt,
+      });
+      return true;
+    }
+  }
+
+  // Check if last-error-at is set and older than timeout
+  // This indicates an error occurred but the file is still in "extracting" status
+  const lastErrorAt = data["last-error-at"];
+  if (lastErrorAt && typeof lastErrorAt === "string") {
+    const errorTime = new Date(lastErrorAt);
+    if (!isNaN(errorTime.getTime()) && now - errorTime.getTime() > STUCK_EXTRACTING_TIMEOUT_MS) {
+      logger.info({
+        event: "file-checker.stuck_extracting_detected",
+        reason: "last-error-at older than timeout",
+        lastErrorAt,
+        timeoutMs: STUCK_EXTRACTING_TIMEOUT_MS,
+      });
+      return true;
+    }
+  }
+
+  // Check extractedAt timestamp - if file has been extracting for too long
+  const extractedAt = data["extractedAt"];
+  if (extractedAt && typeof extractedAt === "string") {
+    const extractedTime = new Date(extractedAt);
+    if (!isNaN(extractedTime.getTime()) && now - extractedTime.getTime() > STUCK_EXTRACTING_TIMEOUT_MS) {
+      logger.info({
+        event: "file-checker.stuck_extracting_detected",
+        reason: "extractedAt older than timeout",
+        extractedAt,
+        timeoutMs: STUCK_EXTRACTING_TIMEOUT_MS,
+      });
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Detect content type from file content
  */
 export function detectContentType(content: string): "audio" | "video" | "image" | "url" | "document" | "text" {

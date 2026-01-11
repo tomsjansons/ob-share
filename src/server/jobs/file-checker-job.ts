@@ -16,7 +16,7 @@ import { defineJob, JobPriority, type PhaseContext } from "./index";
 import { createWorkflowJob } from "@/server/workflows";
 import { logger as baseLogger } from "@/lib/logger";
 import { parseFrontmatter, buildMarkdown } from "@/lib/frontmatter";
-import { isReadyForRetry, detectContentType } from "@/server/file-checker";
+import { isReadyForRetry, isStuckExtracting, detectContentType } from "@/server/file-checker";
 
 const logger = baseLogger.child({ module: "file-checker-job" });
 
@@ -162,12 +162,13 @@ async function scanIncomingFolder(
           bodyLength: parsed.content.length,
         });
 
-        // Check if status is "new" or ready for retry
+        // Check if status is "new", ready for retry, or stuck in "extracting"
         // Normalize status to handle whitespace/case variations
         const rawStatus = parsed.data.status;
         const normalizedStatus = typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : rawStatus;
         const isNew = normalizedStatus === "new";
         const isRetryReady = isReadyForRetry(parsed.data);
+        const isStuck = isStuckExtracting(parsed.data);
 
         // Always log status for each file at INFO level for diagnostics
         logger.info({
@@ -178,16 +179,18 @@ async function scanIncomingFolder(
           normalizedStatus,
           isNew,
           isRetryReady,
+          isStuck,
           frontmatterKeys: Object.keys(parsed.data),
         });
 
-        if (!isNew && !isRetryReady) {
+        if (!isNew && !isRetryReady && !isStuck) {
           logger.debug({
             event: "file-checker-job.file_skipped",
             filePath,
             status: parsed.data.status,
             isNew,
             isRetryReady,
+            isStuck,
             reason: parsed.data.status ? `status is '${parsed.data.status}', not 'new'` : "no status in frontmatter",
           });
           continue;
@@ -197,19 +200,28 @@ async function scanIncomingFolder(
 
         // Detect content type
         const contentType = detectContentType(content);
-        const isRetry = parsed.data.status === "retry";
+        // Treat stuck files as retries since they've been through extraction before
+        const isRetry = parsed.data.status === "retry" || isStuck;
         const retryNum = typeof parsed.data["retry-num"] === "number" ? parsed.data["retry-num"] : 0;
 
         // Read debug_type from frontmatter for testing different transcription approaches
         const debugType = typeof parsed.data.debug_type === "number" ? parsed.data.debug_type : undefined;
 
+        // Log appropriate event based on file state
+        const eventType = isStuck
+          ? "file-checker-job.stuck_file_recovered"
+          : isRetry
+            ? "file-checker-job.retry_file_found"
+            : "file-checker-job.new_file_found";
+
         logger.info({
-          event: isRetry ? "file-checker-job.retry_file_found" : "file-checker-job.new_file_found",
+          event: eventType,
           filePath,
           contentType,
           userId: userConfig.userId,
           retryNum: isRetry ? retryNum : undefined,
           debugType,
+          isStuck,
         });
 
         // Update status to "extracting"
@@ -243,6 +255,7 @@ async function scanIncomingFolder(
           filePath,
           contentType,
           isRetry,
+          isStuck,
         });
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
