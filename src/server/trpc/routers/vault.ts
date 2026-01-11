@@ -6,6 +6,7 @@ import { db } from "@/server/db";
 import { userSettings } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { sanitizeFileForLogging } from "@/lib/logger";
+import type { CapturedPageData } from "@/lib/share-store";
 
 const LocationSchema = z.object({
   country: z.string().optional(),
@@ -20,6 +21,28 @@ const FileSchema = z.object({
   dataUrl: z.string(),
 });
 
+const CapturedMetadataSchema = z.object({
+  description: z.string().nullish(),
+  author: z.string().nullish(),
+  publishedTime: z.string().nullish(),
+  siteName: z.string().nullish(),
+  ogImage: z.string().nullish(),
+  keywords: z.string().nullish(),
+});
+
+const CapturedContentSchema = z.object({
+  url: z.string(),
+  title: z.string(),
+  html: z.string(),
+  bodyText: z.string(),
+  articleHtml: z.string().nullish(),
+  articleText: z.string().nullish(),
+  selection: z.string().optional(),
+  meta: CapturedMetadataSchema,
+  userNote: z.string().optional(),
+  capturedAt: z.string(),
+});
+
 export const vaultRouter = router({
   saveSharedContent: protectedProcedure
     .input(
@@ -29,6 +52,7 @@ export const vaultRouter = router({
         url: z.string().optional(),
         files: z.array(FileSchema).optional(),
         location: LocationSchema.optional(),
+        capturedContent: CapturedContentSchema.optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -42,6 +66,8 @@ export const vaultRouter = router({
         hasUrl: Boolean(input.url),
         fileCount: input.files?.length ?? 0,
         hasLocation: Boolean(input.location),
+        hasCapturedContent: Boolean(input.capturedContent),
+        capturedContentSize: input.capturedContent?.bodyText?.length ?? 0,
       });
 
       // Get user's vault settings
@@ -112,6 +138,7 @@ export const vaultRouter = router({
         files: vaultFiles,
         location: input.location as LocationInfo | undefined,
         vaultConfig,
+        capturedContent: input.capturedContent as CapturedPageData | undefined,
       });
 
       if (result.success) {
@@ -120,6 +147,7 @@ export const vaultRouter = router({
           notePath: result.notePath,
           savedFilesCount: result.savedFiles?.length ?? 0,
           failedFileCount: failedConversions.length,
+          hadCapturedContent: Boolean(input.capturedContent),
         });
       } else {
         logger.error({
