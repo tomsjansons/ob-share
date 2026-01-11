@@ -200,12 +200,16 @@ async function scanIncomingFolder(
         const isRetry = parsed.data.status === "retry";
         const retryNum = typeof parsed.data["retry-num"] === "number" ? parsed.data["retry-num"] : 0;
 
+        // Read debug_type from frontmatter for testing different transcription approaches
+        const debugType = typeof parsed.data.debug_type === "number" ? parsed.data.debug_type : undefined;
+
         logger.info({
           event: isRetry ? "file-checker-job.retry_file_found" : "file-checker-job.new_file_found",
           filePath,
           contentType,
           userId: userConfig.userId,
           retryNum: isRetry ? retryNum : undefined,
+          debugType,
         });
 
         // Update status to "extracting"
@@ -227,6 +231,7 @@ async function scanIncomingFolder(
             maxRetries: userConfig.maxRetries,
             isRetry,
             retryNum,
+            debugType,
           },
           userId: userConfig.userId,
         });

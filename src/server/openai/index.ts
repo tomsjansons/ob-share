@@ -18,3 +18,13 @@ export {
   type ChatCompletionOptions,
   type ChatCompletionResult,
 } from "./client";
+
+// Debug client exports for testing different transcription approaches
+export {
+  debugTranscribe,
+  getDebugTypeDescription,
+  getAvailableDebugTypes,
+  DEBUG_MODELS,
+  type DebugTranscriptionResult,
+  type DebugTranscriptionOptions,
+} from "./debug-client";
