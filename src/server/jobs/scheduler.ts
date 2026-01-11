@@ -10,7 +10,7 @@
 
 import { QueueHandler, getAliveHandlers, cleanupDeadHandlers } from "./queue-handler";
 import { JobRegistry } from "./registry";
-import { cleanupOldJobs, getHandlerHealth, getQueueStats } from "./job-service";
+import { cleanupOldJobs, cleanupStaleJobsOnStartup, getHandlerHealth, getQueueStats } from "./job-service";
 import { processDueSchedules } from "./periodic-job-service";
 import { logger as baseLogger } from "@/lib/logger";
 import { yieldToEventLoop } from "@/lib/async-utils";
@@ -119,6 +119,11 @@ export class QueueScheduler {
 
     this.status.isRunning = true;
     logger.info({ event: "scheduler.started", intervalMs: this.config.intervalMs }, "Queue scheduler started");
+
+    // Clean up stale jobs from previous instance (e.g., after deployment)
+    cleanupStaleJobsOnStartup().catch((err) => {
+      logger.error({ event: "scheduler.startup_cleanup_error", err }, "Error during startup cleanup");
+    });
 
     // Schedule next run
     this.scheduleNextRun();

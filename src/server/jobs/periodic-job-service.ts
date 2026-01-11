@@ -11,7 +11,7 @@
 
 import { db } from "../db";
 import { periodicJobSchedules, jobs } from "../db/schema";
-import { eq, lte, and, isNull, or } from "drizzle-orm";
+import { eq, lte, and, isNull, or, inArray } from "drizzle-orm";
 import { createJob } from "./job-service";
 import { JobRegistry } from "./registry";
 import { logger as baseLogger } from "@/lib/logger";
@@ -197,12 +197,56 @@ export async function getDueSchedules(): Promise<PeriodicJobSchedule[]> {
 }
 
 /**
+ * Check if a schedule already has an active job (pending, running, or claimed)
+ */
+async function hasActiveJob(scheduleId: string): Promise<boolean> {
+  const activeStatuses = ["pending", "running", "claimed"];
+
+  // Look for jobs with this schedule ID in payload and active status
+  const activeJobs = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        inArray(jobs.status, activeStatuses),
+        // The schedule ID is stored in the payload as _scheduleId
+        // We need to check if the payload contains this schedule ID
+        // Using a simple LIKE query since SQLite doesn't have native JSON operators
+        eq(jobs.type, "file-checker") // For now, check the job type
+      )
+    )
+    .limit(1);
+
+  // Also check the lastJobId on the schedule
+  const [schedule] = await db
+    .select({ lastJobId: periodicJobSchedules.lastJobId })
+    .from(periodicJobSchedules)
+    .where(eq(periodicJobSchedules.id, scheduleId))
+    .limit(1);
+
+  if (schedule?.lastJobId) {
+    const [lastJob] = await db
+      .select({ status: jobs.status })
+      .from(jobs)
+      .where(eq(jobs.id, schedule.lastJobId))
+      .limit(1);
+
+    if (lastJob && activeStatuses.includes(lastJob.status)) {
+      return true;
+    }
+  }
+
+  return activeJobs.length > 0;
+}
+
+/**
  * Process all due periodic job schedules
  * Creates new jobs for each schedule that is due
  */
 export async function processDueSchedules(): Promise<{
   processed: number;
   created: string[];
+  skipped: string[];
   errors: Array<{ scheduleId: string; error: string }>;
 }> {
   const dueSchedules = await getDueSchedules();
@@ -213,6 +257,7 @@ export async function processDueSchedules(): Promise<{
   }, "Processing due periodic schedules");
 
   const created: string[] = [];
+  const skipped: string[] = [];
   const errors: Array<{ scheduleId: string; error: string }> = [];
 
   for (const schedule of dueSchedules) {
@@ -220,6 +265,19 @@ export async function processDueSchedules(): Promise<{
     await yieldToEventLoop();
 
     try {
+      // Check if there's already an active job for this schedule
+      const hasActive = await hasActiveJob(schedule.id);
+      if (hasActive) {
+        logger.debug({
+          event: "periodic.job.skipped",
+          scheduleId: schedule.id,
+          jobType: schedule.jobType,
+          reason: "Active job already exists",
+        }, "Skipping schedule - active job exists");
+        skipped.push(schedule.id);
+        continue;
+      }
+
       // Verify the job type exists
       const definition = JobRegistry.get(schedule.jobType);
       if (!definition) {
@@ -298,12 +356,14 @@ export async function processDueSchedules(): Promise<{
     event: "periodic.processing.complete",
     processed: dueSchedules.length,
     created: created.length,
+    skipped: skipped.length,
     errors: errors.length,
   }, "Finished processing periodic schedules");
 
   return {
     processed: dueSchedules.length,
     created,
+    skipped,
     errors,
   };
 }

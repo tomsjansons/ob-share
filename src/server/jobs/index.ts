@@ -70,6 +70,7 @@ export {
   cancelJob,
   retryJob,
   cleanupOldJobs,
+  cleanupStaleJobsOnStartup,
   getPendingJobCount,
   getHandlerHealth,
 } from "./job-service";
