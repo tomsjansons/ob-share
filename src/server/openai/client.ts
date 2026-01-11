@@ -21,10 +21,6 @@ export const DEFAULT_VISION_MODEL = "gpt-4o";
  */
 export interface OpenAIConfig {
   apiKey: string;
-  /** Optional custom base URL (e.g., for Azure OpenAI or proxies). SDK uses OpenAI's API by default. */
-  baseUrl?: string;
-  model?: string;
-  timeout?: number;
 }
 
 /**
@@ -95,24 +91,17 @@ export interface ChatCompletionResult {
   finishReason?: string;
 }
 
+// Default timeout for API requests (2 minutes)
+const DEFAULT_TIMEOUT = 120000;
+
 /**
  * OpenAI API Client
  */
 export class OpenAIClient {
-  private config: {
-    apiKey: string;
-    baseUrl?: string;
-    model?: string;
-    timeout: number;
-  };
+  private apiKey: string;
 
   constructor(config: OpenAIConfig) {
-    this.config = {
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      model: config.model,
-      timeout: config.timeout ?? 120000,
-    };
+    this.apiKey = config.apiKey;
   }
 
   /**
@@ -120,9 +109,8 @@ export class OpenAIClient {
    */
   private createClient(): OpenAI {
     return new OpenAI({
-      apiKey: this.config.apiKey,
-      ...(this.config.baseUrl && { baseURL: this.config.baseUrl }),
-      timeout: this.config.timeout,
+      apiKey: this.apiKey,
+      timeout: DEFAULT_TIMEOUT,
     });
   }
 
@@ -187,7 +175,7 @@ export class OpenAIClient {
     messages: ChatMessage[],
     options?: ChatCompletionOptions
   ): Promise<ChatCompletionResult> {
-    const model = options?.model ?? this.config.model ?? DEFAULT_VISION_MODEL;
+    const model = options?.model ?? DEFAULT_VISION_MODEL;
 
     logger.debug({
       event: "openai.chatCompletion.start",
