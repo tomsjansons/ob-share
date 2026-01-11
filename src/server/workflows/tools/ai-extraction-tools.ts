@@ -12,8 +12,14 @@ import OpenAI from "openai";
 import { defineTool } from "../steps/tool-step";
 import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
-import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL, debugTranscribe, getDebugTypeDescription } from "@/server/openai";
+import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL } from "@/server/openai";
 import { convertAndValidateAudio, type AudioConversionResult } from "@/server/audio";
+
+// Lazy import debug functions to avoid potential module load issues
+const getDebugFunctions = async () => {
+  const { debugTranscribe, getDebugTypeDescription } = await import("@/server/openai/debug-client");
+  return { debugTranscribe, getDebugTypeDescription };
+};
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -293,6 +299,9 @@ export const extractAudioTool = defineTool({
       // ========================================================================
       if (input.debugType && input.debugType >= 1 && input.debugType <= 7) {
         const debugTypeNum = input.debugType;
+
+        // Lazy load debug functions
+        const { debugTranscribe, getDebugTypeDescription } = await getDebugFunctions();
 
         logger.info({
           event: "audio_extraction.debug_mode",

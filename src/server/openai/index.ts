@@ -19,12 +19,9 @@ export {
   type ChatCompletionResult,
 } from "./client";
 
-// Debug client exports for testing different transcription approaches
-export {
-  debugTranscribe,
-  getDebugTypeDescription,
-  getAvailableDebugTypes,
-  DEBUG_MODELS,
-  type DebugTranscriptionResult,
-  type DebugTranscriptionOptions,
+// Debug client types - functions are lazily imported in ai-extraction-tools.ts
+// to avoid potential module load issues affecting the main workflow system
+export type {
+  DebugTranscriptionResult,
+  DebugTranscriptionOptions,
 } from "./debug-client";
