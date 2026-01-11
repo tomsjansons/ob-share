@@ -10,7 +10,7 @@
  */
 
 import { db } from "../db";
-import { periodicJobSchedules, jobs } from "../db/schema";
+import { periodicJobSchedules, jobs, type JobStatus } from "../db/schema";
 import { eq, lte, and, isNull, or, inArray } from "drizzle-orm";
 import { createJob } from "./job-service";
 import { JobRegistry } from "./registry";
@@ -197,10 +197,10 @@ export async function getDueSchedules(): Promise<PeriodicJobSchedule[]> {
 }
 
 /**
- * Check if a schedule already has an active job (pending, running, or claimed)
+ * Check if a schedule already has an active job (pending or processing)
  */
 async function hasActiveJob(scheduleId: string): Promise<boolean> {
-  const activeStatuses = ["pending", "running", "claimed"];
+  const activeStatuses: JobStatus[] = ["pending", "processing"];
 
   // Look for jobs with this schedule ID in payload and active status
   const activeJobs = await db

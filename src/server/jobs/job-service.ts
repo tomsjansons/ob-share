@@ -382,7 +382,7 @@ export async function cleanupStaleJobsOnStartup(
   const now = new Date();
   const staleCutoff = new Date(now.getTime() - staleThresholdMs);
 
-  // 1. Fail jobs that were 'running' or 'claimed' - these were interrupted by deployment
+  // 1. Fail jobs that were 'processing' - these were interrupted by deployment
   const failedJobs = await db
     .update(jobs)
     .set({
@@ -394,12 +394,7 @@ export async function cleanupStaleJobsOnStartup(
       completedAt: now,
       updatedAt: now,
     })
-    .where(
-      or(
-        eq(jobs.status, "running"),
-        eq(jobs.status, "claimed")
-      )
-    )
+    .where(eq(jobs.status, "processing"))
     .returning({ id: jobs.id, type: jobs.type });
 
   // 2. Reset stale pending jobs - set their visibleAt to now so they can be picked up
