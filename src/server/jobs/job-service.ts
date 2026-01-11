@@ -365,6 +365,76 @@ export async function cleanupOldJobs(olderThanDays: number): Promise<number> {
 }
 
 /**
+ * Cleanup stale jobs on startup
+ *
+ * This function should be called when the server starts to clean up any jobs
+ * that were left in a stuck state from a previous instance (e.g., after a deployment).
+ *
+ * It marks jobs as failed if they:
+ * - Are in 'running' or 'claimed' status (stuck from previous instance)
+ * - Are in 'pending' status but older than the stale threshold
+ *
+ * @param staleThresholdMs - Jobs older than this are considered stale (default: 2 hours)
+ */
+export async function cleanupStaleJobsOnStartup(
+  staleThresholdMs: number = 2 * 60 * 60 * 1000
+): Promise<{ failedCount: number; resetCount: number }> {
+  const now = new Date();
+  const staleCutoff = new Date(now.getTime() - staleThresholdMs);
+
+  // 1. Fail jobs that were 'running' or 'claimed' - these were interrupted by deployment
+  const failedJobs = await db
+    .update(jobs)
+    .set({
+      status: "failed",
+      result: JSON.stringify({
+        error: "Job was interrupted by server restart/deployment",
+        cleanedUpAt: now.toISOString(),
+      }),
+      completedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      or(
+        eq(jobs.status, "running"),
+        eq(jobs.status, "claimed")
+      )
+    )
+    .returning({ id: jobs.id, type: jobs.type });
+
+  // 2. Reset stale pending jobs - set their visibleAt to now so they can be picked up
+  // but only if they're not too old (we'll let the task runner decide if they're too stale)
+  const resetJobs = await db
+    .update(jobs)
+    .set({
+      visibleAt: now,
+      updatedAt: now,
+      handlerId: null,
+    })
+    .where(
+      and(
+        eq(jobs.status, "pending"),
+        lte(jobs.visibleAt, staleCutoff) // Visibility was set in the past
+      )
+    )
+    .returning({ id: jobs.id });
+
+  if (failedJobs.length > 0 || resetJobs.length > 0) {
+    logger.info({
+      event: "job.startup_cleanup",
+      failedCount: failedJobs.length,
+      failedJobs: failedJobs.map(j => ({ id: j.id, type: j.type })),
+      resetCount: resetJobs.length,
+    }, "Cleaned up stale jobs on startup");
+  }
+
+  return {
+    failedCount: failedJobs.length,
+    resetCount: resetJobs.length,
+  };
+}
+
+/**
  * Get pending job count (for health checks)
  */
 export async function getPendingJobCount(): Promise<number> {

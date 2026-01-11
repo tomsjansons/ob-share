@@ -158,14 +158,31 @@ export class TaskRunner {
 
   /**
    * Check if job has exceeded maximum execution time
+   * Uses startedAt (when job began executing) if available,
+   * falls back to createdAt for jobs that haven't started yet.
+   *
+   * For jobs that sat in the queue during deployment, we check against
+   * createdAt but with a separate "stale job" threshold (2x max execution time)
+   * to allow jobs to be properly executed after a restart.
    */
   private isJobExpired(job: JobRecord): boolean {
     if (this.config.maxJobExecutionTime === 0) {
       return false; // No limit
     }
 
-    const jobAge = Date.now() - job.createdAt.getTime();
-    return jobAge > this.config.maxJobExecutionTime;
+    const now = Date.now();
+
+    // If job has started, check execution time from start
+    if (job.startedAt) {
+      const executionTime = now - job.startedAt.getTime();
+      return executionTime > this.config.maxJobExecutionTime;
+    }
+
+    // For jobs that haven't started yet, check if they're too old to even attempt
+    // Use 2x max execution time as the threshold for stale jobs
+    const jobAge = now - job.createdAt.getTime();
+    const staleThreshold = this.config.maxJobExecutionTime * 2;
+    return jobAge > staleThreshold;
   }
 
   /**
@@ -187,18 +204,29 @@ export class TaskRunner {
 
     // Check if job has exceeded maximum execution time
     if (this.isJobExpired(job)) {
-      const jobAge = Date.now() - job.createdAt.getTime();
+      const now = Date.now();
+      const executionTimeMs = job.startedAt
+        ? now - job.startedAt.getTime()
+        : null;
+      const jobAgeMs = now - job.createdAt.getTime();
+
       logger.error({
         event: "job.expired",
         jobId: job.id,
         jobType: job.type,
-        jobAgeMs: jobAge,
+        executionTimeMs,
+        jobAgeMs,
+        startedAt: job.startedAt?.toISOString(),
         maxExecutionTimeMs: this.config.maxJobExecutionTime,
-      }, "Job exceeded maximum execution time");
+      }, job.startedAt
+        ? "Job exceeded maximum execution time"
+        : "Job is too stale to execute (sat in queue too long)");
 
       return {
         success: false,
-        error: `Job exceeded maximum execution time (${Math.round(this.config.maxJobExecutionTime / 1000)}s)`,
+        error: job.startedAt
+          ? `Job exceeded maximum execution time (${Math.round(this.config.maxJobExecutionTime / 1000)}s)`
+          : `Job is too stale - was created ${Math.round(jobAgeMs / 1000)}s ago, max allowed is ${Math.round(this.config.maxJobExecutionTime * 2 / 1000)}s`,
         completedPhases: [],
       };
     }
