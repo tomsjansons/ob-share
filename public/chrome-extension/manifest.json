@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "ob-share",
-  "version": "1.0.0",
-  "description": "Share URLs and notes to your Obsidian vault via ob-share",
+  "version": "1.1.0",
+  "description": "Share URLs, notes, and full page content to your Obsidian vault via ob-share",
   "permissions": [
     "activeTab",
     "contextMenus",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "action": {
     "default_title": "Share to ob-share",

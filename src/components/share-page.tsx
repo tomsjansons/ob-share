@@ -9,9 +9,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Check, Share2, ArrowLeft, Image, Music, Video, FileText, Loader2, CheckCircle2, XCircle, AlertTriangle, Settings, MapPin } from "lucide-react";
+import { Check, Share2, ArrowLeft, Image, Music, Video, FileText, Loader2, CheckCircle2, XCircle, AlertTriangle, Settings, MapPin, FileDown } from "lucide-react";
 import Link from "next/link";
-import type { SharedFile } from "@/lib/share-store";
+import type { SharedFile, CapturedPageData } from "@/lib/share-store";
 import { trpc } from "@/lib/trpc/client";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AvatarDropdown } from "@/components/avatar-dropdown";
@@ -32,6 +32,7 @@ interface SharePageProps {
     url: string;
     files: SharedFile[];
     error?: string;
+    capturedContent?: CapturedPageData;
   };
 }
 
@@ -142,7 +143,8 @@ export function SharePage({ user, sharedData }: SharePageProps) {
   const hasTextContent =
     sharedData.title || sharedData.text || sharedData.url;
   const hasFiles = sharedData.files && sharedData.files.length > 0;
-  const hasSharedContent = hasTextContent || hasFiles;
+  const hasCapturedContent = Boolean(sharedData.capturedContent);
+  const hasSharedContent = hasTextContent || hasFiles || hasCapturedContent;
 
   // Function to perform the actual save
   const performSave = useCallback((location: LocationInfo | undefined) => {
@@ -157,6 +159,7 @@ export function SharePage({ user, sharedData }: SharePageProps) {
         dataUrl: f.dataUrl,
       })),
       location,
+      capturedContent: sharedData.capturedContent,
     });
   }, [sharedData, saveToVault]);
 
@@ -344,6 +347,36 @@ export function SharePage({ user, sharedData }: SharePageProps) {
                         <FilePreview file={file} />
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Captured content indicator */}
+              {hasCapturedContent && sharedData.capturedContent && (
+                <div className="rounded-md bg-primary/10 border border-primary/20 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <FileDown className="h-5 w-5 text-primary" />
+                    <p className="text-sm font-medium text-primary">
+                      Full Page Captured
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Complete page content was captured from the browser extension.
+                    This includes authenticated/private content that the server cannot fetch directly.
+                  </p>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    {sharedData.capturedContent.articleText && (
+                      <p>Article: {Math.round(sharedData.capturedContent.articleText.length / 1000)}KB extracted</p>
+                    )}
+                    {sharedData.capturedContent.bodyText && (
+                      <p>Full text: {Math.round(sharedData.capturedContent.bodyText.length / 1000)}KB</p>
+                    )}
+                    {sharedData.capturedContent.meta?.author && (
+                      <p>Author: {sharedData.capturedContent.meta.author}</p>
+                    )}
+                    {sharedData.capturedContent.meta?.siteName && (
+                      <p>Site: {sharedData.capturedContent.meta.siteName}</p>
+                    )}
                   </div>
                 </div>
               )}

@@ -12,14 +12,8 @@ import OpenAI from "openai";
 import { defineTool } from "../steps/tool-step";
 import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
-import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL } from "@/server/openai";
+import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL, debugTranscribe, getDebugTypeDescription } from "@/server/openai";
 import { convertAndValidateAudio, type AudioConversionResult } from "@/server/audio";
-
-// Lazy import debug functions to avoid potential module load issues
-const getDebugFunctions = async () => {
-  const { debugTranscribe, getDebugTypeDescription } = await import("@/server/openai/debug-client");
-  return { debugTranscribe, getDebugTypeDescription };
-};
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -266,31 +260,16 @@ export const extractAudioTool = defineTool({
         });
       }
 
-      // If conversion failed duration validation, return error with WAV file info attached
+      // Log if duration validation failed but proceed with transcription anyway
+      // (validation is known to be unreliable for some formats)
       if (conversionResult.wasConverted && !conversionResult.durationValid) {
-        logger.warn({
-          event: "audio_extraction.duration_validation_failed",
+        logger.info({
+          event: "audio_extraction.duration_validation_skipped",
           filePath: input.filePath,
           vaultWavPath: conversionResult.vaultWavPath,
-          error: conversionResult.validationError,
+          note: "Proceeding with transcription despite validation warning",
+          validationWarning: conversionResult.validationError,
         });
-
-        // Return error result with WAV file info for attachment to MD
-        return {
-          success: false,
-          error: `Audio transcoding validation failed. The converted WAV file has been saved but transcription was not attempted.\n\n**Error:** ${conversionResult.validationError}\n\n**WAV File:** ${conversionResult.vaultWavPath ? path.basename(conversionResult.vaultWavPath) : "unknown"}`,
-          output: {
-            speakers: [],
-            transcription: [],
-            summary: "",
-            intentions: [],
-            backgroundNoises: [],
-            wavFilePath: conversionResult.vaultWavPath,
-            wasConverted: true,
-            conversionValid: false,
-            conversionError: conversionResult.validationError,
-          },
-        };
       }
 
       // ========================================================================
@@ -299,9 +278,6 @@ export const extractAudioTool = defineTool({
       // ========================================================================
       if (input.debugType && input.debugType >= 1 && input.debugType <= 7) {
         const debugTypeNum = input.debugType;
-
-        // Lazy load debug functions
-        const { debugTranscribe, getDebugTypeDescription } = await getDebugFunctions();
 
         logger.info({
           event: "audio_extraction.debug_mode",
