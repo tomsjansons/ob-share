@@ -246,13 +246,6 @@ chrome.runtime.onInstalled.addListener(() => {
       contexts: ["page", "frame"],
     });
 
-    // Separator before link/selection options
-    chrome.contextMenus.create({
-      id: "separator-2",
-      type: "separator",
-      contexts: ["page", "frame"],
-    });
-
     // Share link option (for right-clicking on links)
     chrome.contextMenus.create({
       id: "share-link",
@@ -271,7 +264,7 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
       id: "separator-3",
       type: "separator",
-      contexts: ["page", "frame"],
+      contexts: ["page", "frame", "link", "selection"],
     });
 
     // Settings option
