@@ -15,5 +15,6 @@ export {
   parseFrontmatter,
   buildMarkdown,
   isReadyForRetry,
+  isStuckExtracting,
   detectContentType,
 } from "./file-checker";
