@@ -928,3 +928,52 @@ Document analysis uses OpenAI's models (configurable per-user in settings):
 - **Document Analysis Model**: Stored in `user_settings.documentAnalysisModel` (default: `gpt-4o`)
 - Supports PDF, DOC, DOCX, TXT, MD, CSV, RTF, ODT file types
 - Extracts: title, summary (meaning-focused, 2-3 sentences), key points (3-5 max)
+
+### Audio Transcription Debug Mode (debug_type)
+
+The audio extraction system supports a `debug_type` frontmatter field for diagnosing 404 and other API errors with the OpenAI transcription endpoint.
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `src/server/openai/debug-client.ts` | Debug implementations for 7 different API approaches |
+| `src/server/openai/index.ts` | Exports debug functions |
+| `src/server/workflows/tools/ai-extraction-tools.ts` | Uses debug client when `debugType` is set |
+| `src/server/jobs/file-checker-job.ts` | Reads `debug_type` from frontmatter |
+| `src/server/workflows/examples/new-note-extract-workflow.ts` | Passes `debugType` through workflow |
+
+**How it works:**
+
+1. User adds `debug_type: N` (1-7) to markdown frontmatter
+2. File checker reads `debug_type` from frontmatter
+3. Workflow passes `debugType` to extract-audio tool
+4. Extract-audio uses debug client instead of standard OpenAI client
+5. Detailed debug info is included in success/error output
+
+**Debug types:**
+
+| Type | Approach |
+|------|----------|
+| 1 | Default SDK with diarized_json + chunking_strategy=auto |
+| 2 | Direct fetch API to exact endpoint URL (bypasses SDK) |
+| 3 | Whisper-1 model fallback (known working) |
+| 4 | gpt-4o-transcribe without diarization |
+| 5 | SDK with explicit baseURL override |
+| 6 | Manual multipart form construction |
+| 7 | Diarize model with json format (no chunking_strategy) |
+
+**Modifying debug behavior:**
+
+| Change | Files to Update |
+|--------|-----------------|
+| Add new debug type | `src/server/openai/debug-client.ts` - add new debugTypeN function |
+| Change debug type descriptions | `src/server/openai/debug-client.ts` - `getDebugTypeDescription()` |
+| Add new debug parameters | Update schemas in all key files above |
+
+**Research sources:**
+
+The debug implementations are based on issues reported in the OpenAI community forums:
+- [chunking_strategy required errors](https://community.openai.com/t/gpt-4o-transcribe-diarize-returns-chunking-strategy-is-required-any-working-example-or-schema/1364231)
+- [Whisper API errors solved](https://community.openai.com/t/api-whisper-transcriptions-errors-solved/622843)
+- [SDK URL construction issues](https://github.com/openai/openai-node/issues/348)

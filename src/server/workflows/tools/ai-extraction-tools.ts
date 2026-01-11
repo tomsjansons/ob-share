@@ -12,7 +12,7 @@ import OpenAI from "openai";
 import { defineTool } from "../steps/tool-step";
 import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
-import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL } from "@/server/openai";
+import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL, debugTranscribe, getDebugTypeDescription } from "@/server/openai";
 import { convertAndValidateAudio, type AudioConversionResult } from "@/server/audio";
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
@@ -40,6 +40,15 @@ export const AudioExtractionResultSchema = z.object({
   wasConverted: z.boolean().optional(),
   conversionValid: z.boolean().optional(),
   conversionError: z.string().optional(),
+  // Debug info for transcription debugging
+  debugInfo: z.object({
+    debugType: z.number(),
+    model: z.string(),
+    endpoint: z.string(),
+    method: z.string(),
+    responseStatus: z.number().optional(),
+    requestDetails: z.string().optional(),
+  }).optional(),
 });
 
 export const VideoExtractionResultSchema = z.object({
@@ -148,10 +157,19 @@ export type DocumentExtractionResult = z.infer<typeof DocumentExtractionResultSc
 /**
  * Extract information from audio files using gpt-4o-transcribe-diarize model
  * Uses the OpenAI audio transcriptions endpoint with diarization support
+ *
+ * When debug_type is specified in frontmatter, uses different API approaches to diagnose 404 errors:
+ * - debug_type: 1 - Default SDK with diarized_json and chunking_strategy=auto
+ * - debug_type: 2 - Direct fetch API to exact endpoint URL (bypasses SDK)
+ * - debug_type: 3 - Whisper-1 model fallback (known working model)
+ * - debug_type: 4 - gpt-4o-transcribe without diarization features
+ * - debug_type: 5 - SDK with explicit baseURL override
+ * - debug_type: 6 - Manual multipart form construction (maximum control)
+ * - debug_type: 7 - Diarize model with json format (no chunking_strategy)
  */
 export const extractAudioTool = defineTool({
   name: "extract-audio",
-  description: "Extract speakers, transcription, and structured information from an audio file using gpt-4o-transcribe-diarize",
+  description: "Extract speakers, transcription, and structured information from an audio file using gpt-4o-transcribe-diarize. Set debug_type in frontmatter (1-7) to test different API approaches for 404 debugging.",
   category: "ai-extraction",
   parameters: [
     {
@@ -172,11 +190,18 @@ export const extractAudioTool = defineTool({
       description: "OpenAI model to use (default: gpt-4o-transcribe-diarize)",
       required: false,
     },
+    {
+      name: "debugType",
+      type: "number",
+      description: "Debug type (1-7) to test different API approaches for 404 error diagnosis",
+      required: false,
+    },
   ],
   inputSchema: z.object({
     filePath: z.string(),
     openaiApiKey: z.string().optional(),
     openaiModel: z.string().optional(),
+    debugType: z.number().optional(),
   }),
   outputSchema: AudioExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<AudioExtractionResult>> => {
@@ -262,7 +287,124 @@ export const extractAudioTool = defineTool({
         };
       }
 
-      // Create OpenAI client
+      // ========================================================================
+      // DEBUG MODE: Use debug client when debug_type is specified in frontmatter
+      // This allows testing different API approaches to diagnose 404 errors
+      // ========================================================================
+      if (input.debugType && input.debugType >= 1 && input.debugType <= 7) {
+        const debugTypeNum = input.debugType;
+
+        logger.info({
+          event: "audio_extraction.debug_mode",
+          filePath: conversionResult.transcriptionFilePath,
+          debugType: debugTypeNum,
+          debugDescription: getDebugTypeDescription(debugTypeNum),
+          fileSize: audioFileSize,
+        });
+
+        const debugResult = await debugTranscribe({
+          debugType: debugTypeNum,
+          apiKey: apiKey!,
+          filePath: conversionResult.transcriptionFilePath,
+        });
+
+        logger.info({
+          event: "audio_extraction.debug_result",
+          filePath: input.filePath,
+          debugType: debugTypeNum,
+          success: debugResult.success,
+          hasText: !!debugResult.text,
+          textLength: debugResult.text?.length ?? 0,
+          segmentCount: debugResult.segments?.length ?? 0,
+          error: debugResult.error,
+          responseStatus: debugResult.debugInfo?.responseStatus,
+        });
+
+        if (debugResult.success && debugResult.text) {
+          // Extract speakers from segments
+          const speakerSet = new Set<string>();
+          for (const segment of debugResult.segments || []) {
+            if (segment.speaker) {
+              speakerSet.add(segment.speaker);
+            }
+          }
+
+          const speakers = Array.from(speakerSet).map((speaker) => ({
+            id: speaker,
+            name: speaker,
+          }));
+
+          const transcription = (debugResult.segments || []).map((segment) => ({
+            speaker: segment.speaker,
+            text: segment.text,
+            timestamp: segment.start !== undefined && segment.end !== undefined
+              ? `${segment.start.toFixed(1)}s - ${segment.end.toFixed(1)}s`
+              : undefined,
+          }));
+
+          const analysisResult: AudioExtractionResult = {
+            speakers,
+            transcription,
+            summary: debugResult.text,
+            intentions: [],
+            backgroundNoises: [],
+            wavFilePath: conversionResult.vaultWavPath,
+            wasConverted: conversionResult.wasConverted,
+            conversionValid: conversionResult.durationValid,
+            debugInfo: debugResult.debugInfo,
+          };
+
+          return {
+            success: true,
+            output: analysisResult,
+          };
+        } else {
+          // Debug mode failed - include debug info in error
+          const errorLines = [
+            `**Debug Mode Audio Extraction Error (debug_type: ${debugTypeNum})**`,
+            ``,
+            `**Debug Description:** ${getDebugTypeDescription(debugTypeNum)}`,
+            `**Endpoint:** ${debugResult.debugInfo?.endpoint ?? "unknown"}`,
+            `**Method:** ${debugResult.debugInfo?.method ?? "unknown"}`,
+            `**Model:** ${debugResult.debugInfo?.model ?? "unknown"}`,
+            `**Response Status:** ${debugResult.debugInfo?.responseStatus ?? "N/A"}`,
+            ``,
+            `**Error:** ${debugResult.error ?? "Unknown error"}`,
+            ``,
+            `**Input File:** \`${input.filePath}\``,
+            `**Format:** ${originalExt}`,
+            audioFileSize ? `**File Size:** ${Math.round(audioFileSize / 1024)} KB` : `**File Size:** unknown`,
+          ];
+
+          if (debugResult.debugInfo?.requestDetails) {
+            errorLines.push(`**Request Details:** ${debugResult.debugInfo.requestDetails}`);
+          }
+
+          if (conversionResult?.vaultWavPath) {
+            errorLines.push(`**WAV File:** \`${path.basename(conversionResult.vaultWavPath)}\``);
+          }
+
+          return {
+            success: false,
+            error: `Failed to extract audio (debug mode):\n\n${errorLines.join("\n")}`,
+            output: {
+              speakers: [],
+              transcription: [],
+              summary: "",
+              intentions: [],
+              backgroundNoises: [],
+              wavFilePath: conversionResult.vaultWavPath,
+              wasConverted: conversionResult.wasConverted,
+              conversionValid: conversionResult.durationValid,
+              debugInfo: debugResult.debugInfo,
+            },
+          };
+        }
+      }
+
+      // ========================================================================
+      // NORMAL MODE: Use OpenAI client for standard transcription
+      // ========================================================================
       const openai = new OpenAIClient({ apiKey });
 
       logger.info({

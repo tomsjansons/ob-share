@@ -707,6 +707,49 @@ Access settings via the right-click context menu to configure:
 - **Volume not mounting:** Ensure volume is attached to the service and mount path is set to `/data`. Volumes only mount at runtime, not during build
 - **Permission issues with volume:** Railway volumes mount as root. Set `RAILWAY_RUN_UID=0` if needed
 
+### Audio Transcription 404 Errors
+
+If you're experiencing 404 errors when transcribing audio files, you can use the `debug_type` frontmatter field to test different API approaches and identify the root cause.
+
+**How to use debug_type:**
+
+Add `debug_type: N` to your markdown file's frontmatter (where N is 1-7):
+
+```yaml
+---
+status: new
+debug_type: 3
+---
+![[my-audio.webm]]
+```
+
+**Available debug types:**
+
+| debug_type | Description | What it tests |
+|------------|-------------|---------------|
+| 1 | Default SDK + diarized_json + chunking_strategy=auto | Current implementation |
+| 2 | Direct fetch API to exact endpoint URL | Bypasses SDK URL construction |
+| 3 | Whisper-1 model fallback | Known working model (no diarization) |
+| 4 | gpt-4o-transcribe without diarization | Tests if diarization is the issue |
+| 5 | SDK with explicit baseURL override | Rules out URL configuration issues |
+| 6 | Manual multipart form construction | Maximum control over request format |
+| 7 | Diarize model with json format (no chunking_strategy) | Tests chunking_strategy requirement |
+
+**Diagnostic process:**
+
+1. Start with `debug_type: 3` (Whisper-1) - If this works, the API key is valid
+2. Try `debug_type: 4` (gpt-4o-transcribe) - If this works, the issue is with diarization
+3. Try `debug_type: 2` (Direct fetch) - If this works, it's an SDK issue
+4. Try `debug_type: 5` (Explicit baseURL) - If this works, it's a URL configuration issue
+
+**Common causes from OpenAI community forums:**
+
+- Model name typos or unavailable models
+- Missing `chunking_strategy` parameter for diarization models
+- SDK URL construction issues (trailing slashes)
+- File format issues (use WAV or MP3 for best results)
+- API key permissions
+
 ### Container Logs
 
 ```bash
