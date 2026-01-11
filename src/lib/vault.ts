@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { logger } from "./logger";
 import { buildMarkdown } from "./frontmatter";
+import type { CapturedPageData } from "./share-store";
 
 // Create a child logger for vault operations
 const vaultLogger = logger.child({ module: "vault" });
@@ -36,6 +37,7 @@ export interface SaveToVaultOptions {
   files?: VaultFile[];
   location?: LocationInfo;
   vaultConfig: VaultConfig;
+  capturedContent?: CapturedPageData;
 }
 
 export interface VaultFile {
@@ -156,9 +158,48 @@ function generateMarkdownContent(options: SaveToVaultOptions, savedFileNames: st
     sections.push(`## Source\n\n${options.url}\n`);
   }
 
-  // Add text content if present
-  if (options.text) {
-    sections.push(`## Content\n\n${options.text}\n`);
+  // Add captured content if present (from browser extension full page capture)
+  if (options.capturedContent) {
+    const captured = options.capturedContent;
+
+    // Add user note if provided
+    if (captured.userNote) {
+      sections.push(`## Note\n\n${captured.userNote}\n`);
+    }
+
+    // Add article content if extracted (preferred over full body text)
+    if (captured.articleText) {
+      sections.push(`## Article Content\n\n${captured.articleText}\n`);
+    } else if (captured.bodyText) {
+      // Fall back to full body text if no article was extracted
+      // Truncate if too long to avoid massive notes
+      const maxBodyLength = 50000;
+      const bodyText = captured.bodyText.length > maxBodyLength
+        ? captured.bodyText.slice(0, maxBodyLength) + "\n\n[Content truncated...]"
+        : captured.bodyText;
+      sections.push(`## Page Content\n\n${bodyText}\n`);
+    }
+
+    // Add metadata section if available
+    const meta = captured.meta;
+    if (meta && (meta.author || meta.publishedTime || meta.siteName || meta.description)) {
+      sections.push(`## Metadata\n`);
+      if (meta.siteName) sections.push(`- **Site:** ${meta.siteName}`);
+      if (meta.author) sections.push(`- **Author:** ${meta.author}`);
+      if (meta.publishedTime) sections.push(`- **Published:** ${meta.publishedTime}`);
+      if (meta.description) sections.push(`- **Description:** ${meta.description}`);
+      sections.push("");
+    }
+
+    // Add selection if captured
+    if (captured.selection) {
+      sections.push(`## Selected Text\n\n> ${captured.selection.replace(/\n/g, "\n> ")}\n`);
+    }
+  } else {
+    // Add text content if present (non-captured mode)
+    if (options.text) {
+      sections.push(`## Content\n\n${options.text}\n`);
+    }
   }
 
   // Add file links if present

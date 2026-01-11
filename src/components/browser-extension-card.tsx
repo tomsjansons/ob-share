@@ -46,6 +46,7 @@ export function BrowserExtensionCard() {
             <li>Share with notes via right-click menu</li>
             <li>Share selected text as notes</li>
             <li>Share any link directly</li>
+            <li className="text-primary font-medium">Full page capture for private/authenticated pages</li>
           </ul>
         </div>
       </div>
@@ -99,14 +100,17 @@ export function BrowserExtensionCard() {
               <p className="font-medium mb-1">Using the extension</p>
               <ul className="text-muted-foreground space-y-1 text-xs">
                 <li>
-                  <strong>Click icon</strong> &rarr; Instantly share current page
+                  <strong>Click icon</strong> &rarr; Share using your default mode
                 </li>
                 <li>
                   <strong>Right-click</strong> &rarr; Share with note, share
                   links, share selection
                 </li>
                 <li>
-                  <strong>Settings</strong> &rarr; Configure your ob-share URL
+                  <strong>Capture full page</strong> &rarr; Capture private/authenticated content
+                </li>
+                <li>
+                  <strong>Settings</strong> &rarr; Configure URL and default share mode
                 </li>
               </ul>
             </div>

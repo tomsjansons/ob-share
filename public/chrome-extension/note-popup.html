@@ -86,7 +86,7 @@
       color: #fff;
       outline: none;
       resize: vertical;
-      min-height: 100px;
+      min-height: 80px;
       transition: border-color 0.2s, box-shadow 0.2s;
     }
 
@@ -97,6 +97,53 @@
 
     textarea::placeholder {
       color: #666;
+    }
+
+    /* Share mode toggle */
+    .mode-toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background: #1a1a1a;
+      color: #888;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .mode-btn:hover {
+      border-color: #444;
+      color: #e5e5e5;
+    }
+
+    .mode-btn.selected {
+      border-color: #7c3aed;
+      background: rgba(124, 58, 237, 0.1);
+      color: #e5e5e5;
+    }
+
+    .mode-btn .mode-label {
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .mode-btn .mode-desc {
+      font-size: 10px;
+      font-weight: 400;
+      color: #666;
+    }
+
+    .mode-btn.selected .mode-desc {
+      color: #888;
     }
 
     .button-group {
@@ -124,6 +171,11 @@
       background: #6d28d9;
     }
 
+    .btn-primary:disabled {
+      background: #4c2899;
+      cursor: not-allowed;
+    }
+
     .btn-secondary {
       background: #333;
       color: #e5e5e5;
@@ -148,6 +200,22 @@
       font-family: monospace;
       font-size: 11px;
     }
+
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      font-size: 9px;
+      font-weight: 600;
+      border-radius: 3px;
+      margin-left: 6px;
+      vertical-align: middle;
+      text-transform: uppercase;
+    }
+
+    .badge-new {
+      background: rgba(124, 58, 237, 0.3);
+      color: #a78bfa;
+    }
   </style>
 </head>
 <body>
@@ -159,6 +227,20 @@
   <div class="url-preview">
     <div class="title" id="pageTitle">Loading...</div>
     <div id="pageUrl"></div>
+  </div>
+
+  <div class="form-group">
+    <label>Share Mode</label>
+    <div class="mode-toggle">
+      <button type="button" class="mode-btn selected" id="modeUrlOnly" data-mode="url_only">
+        <span class="mode-label">URL Only</span>
+        <span class="mode-desc">Fast, server fetches</span>
+      </button>
+      <button type="button" class="mode-btn" id="modeFullPage" data-mode="full_page">
+        <span class="mode-label">Full Page<span class="badge badge-new">New</span></span>
+        <span class="mode-desc">For private pages</span>
+      </button>
+    </div>
   </div>
 
   <div class="form-group">

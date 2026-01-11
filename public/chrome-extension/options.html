@@ -169,6 +169,77 @@
       font-family: monospace;
       font-size: 12px;
     }
+
+    /* Radio button group styles */
+    .radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .radio-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #0f0f0f;
+      border: 1px solid #333;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color 0.2s, background-color 0.2s;
+    }
+
+    .radio-option:hover {
+      border-color: #444;
+      background: #151515;
+    }
+
+    .radio-option.selected {
+      border-color: #7c3aed;
+      background: rgba(124, 58, 237, 0.1);
+    }
+
+    .radio-option input[type="radio"] {
+      margin-top: 2px;
+      accent-color: #7c3aed;
+    }
+
+    .radio-content {
+      flex: 1;
+    }
+
+    .radio-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #e5e5e5;
+      margin-bottom: 4px;
+    }
+
+    .radio-description {
+      font-size: 12px;
+      color: #888;
+      line-height: 1.5;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 4px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .badge-new {
+      background: rgba(124, 58, 237, 0.2);
+      color: #a78bfa;
+    }
+
+    .badge-default {
+      background: rgba(34, 197, 94, 0.2);
+      color: #4ade80;
+    }
   </style>
 </head>
 <body>
@@ -187,23 +258,64 @@
         >
         <p class="help-text">The URL of your ob-share instance. Leave empty to use the default.</p>
       </div>
-
-      <div class="button-group">
-        <button type="button" class="btn-primary" id="saveBtn">Save Settings</button>
-        <button type="button" class="btn-secondary" id="resetBtn">Reset to Default</button>
-      </div>
-
-      <div class="status" id="status"></div>
     </div>
+
+    <div class="section">
+      <h2 class="section-title">Default Share Mode</h2>
+      <p class="help-text" style="margin-bottom: 16px;">
+        Choose what happens when you click the extension icon or use "Share this page".
+        You can always override this using the explicit menu options.
+      </p>
+      <div class="radio-group" id="shareModeGroup">
+        <label class="radio-option" data-mode="url_only">
+          <input type="radio" name="shareMode" value="url_only" checked>
+          <div class="radio-content">
+            <div class="radio-label">
+              URL Only
+              <span class="badge badge-default">Default</span>
+            </div>
+            <div class="radio-description">
+              Share just the page URL. Fast and simple. The server will fetch and summarize the page content.
+            </div>
+          </div>
+        </label>
+        <label class="radio-option" data-mode="full_page">
+          <input type="radio" name="shareMode" value="full_page">
+          <div class="radio-content">
+            <div class="radio-label">
+              Full Page Capture
+              <span class="badge badge-new">New</span>
+            </div>
+            <div class="radio-description">
+              Capture the complete page content including text, article, and metadata.
+              Works with authenticated/private pages that require login.
+            </div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="button-group">
+      <button type="button" class="btn-primary" id="saveBtn">Save Settings</button>
+      <button type="button" class="btn-secondary" id="resetBtn">Reset to Default</button>
+    </div>
+
+    <div class="status" id="status"></div>
 
     <div class="section">
       <h2 class="section-title">How to Use</h2>
       <dl class="keyboard-shortcuts">
         <dt>Click extension icon</dt>
-        <dd>Instantly share the current page to ob-share</dd>
+        <dd>Share using your default mode (URL only or full page capture)</dd>
 
         <dt>Right-click on page</dt>
-        <dd>Access "Share this page", "Share with note...", and "Settings"</dd>
+        <dd>Access "Share this page", "Share with note...", explicit mode options, and "Settings"</dd>
+
+        <dt>Share URL only</dt>
+        <dd>Always share just the URL, regardless of default mode</dd>
+
+        <dt>Capture full page content</dt>
+        <dd>Always capture full page, regardless of default mode. Use this for authenticated pages!</dd>
 
         <dt>Right-click on a link</dt>
         <dd>Share that specific link to ob-share</dd>

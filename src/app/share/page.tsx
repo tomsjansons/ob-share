@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { SharePage } from "@/components/share-page";
 import { ShareLogin } from "@/components/share-login";
-import { getSharedData, SharedFile } from "@/lib/share-store";
+import { getSharedData, SharedFile, CapturedPageData } from "@/lib/share-store";
 
 interface SharePageProps {
   searchParams: Promise<{
@@ -20,6 +20,7 @@ export interface SharedDataWithFiles {
   url: string;
   files: SharedFile[];
   error?: string;
+  capturedContent?: CapturedPageData;
 }
 
 export default async function Share({ searchParams }: SharePageProps) {
@@ -29,7 +30,7 @@ export default async function Share({ searchParams }: SharePageProps) {
 
   const params = await searchParams;
 
-  // Try to get stored data by ID first (for file shares)
+  // Try to get stored data by ID first (for file shares and captured content)
   let sharedData: SharedDataWithFiles;
   if (params.id) {
     const storedData = getSharedData(params.id);
@@ -39,6 +40,7 @@ export default async function Share({ searchParams }: SharePageProps) {
         text: storedData.text,
         url: storedData.url,
         files: storedData.files,
+        capturedContent: storedData.capturedContent,
       };
     } else {
       // Data expired or not found, fall back to URL params

@@ -18,12 +18,42 @@ export interface SharedFile {
   dataUrl: string;
 }
 
+/**
+ * Metadata extracted from a captured page
+ */
+export interface CapturedMetadata {
+  description?: string | null;
+  author?: string | null;
+  publishedTime?: string | null;
+  siteName?: string | null;
+  ogImage?: string | null;
+  keywords?: string | null;
+}
+
+/**
+ * Full page capture data from browser extension
+ */
+export interface CapturedPageData {
+  url: string;
+  title: string;
+  html: string;           // Full page HTML
+  bodyText: string;       // Full page text content
+  articleHtml?: string | null;   // Extracted article HTML
+  articleText?: string | null;   // Extracted article text
+  selection?: string;     // Selected text at capture time
+  meta: CapturedMetadata;
+  userNote?: string;      // User-added note
+  capturedAt: string;     // ISO timestamp
+}
+
 export interface SharedData {
   title: string;
   text: string;
   url: string;
   files: SharedFile[];
   createdAt: number;
+  // New: captured page content
+  capturedContent?: CapturedPageData;
 }
 
 // Simple in-memory store with automatic cleanup

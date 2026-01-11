@@ -192,38 +192,85 @@ const has = hasFrontmatter(content);
 
 ## Browser Extension (Chrome/Vivaldi)
 
-A private Chrome extension for sharing links directly from desktop browsers.
+A private Chrome extension for sharing links and capturing page content directly from desktop browsers.
 
 ### Key Extension Files
 
 | File | Purpose |
 |------|---------|
-| `chrome-extension/manifest.json` | Extension manifest (Manifest V3) |
-| `chrome-extension/background.js` | Service worker for handling sharing |
-| `chrome-extension/options.html` | Settings page UI |
-| `chrome-extension/options.js` | Settings page logic |
-| `chrome-extension/note-popup.html` | Share with note popup UI |
-| `chrome-extension/note-popup.js` | Share with note popup logic |
-| `chrome-extension/icons/` | Extension icons (16, 48, 128px) |
+| `public/chrome-extension/manifest.json` | Extension manifest (Manifest V3) |
+| `public/chrome-extension/background.js` | Service worker for sharing and page capture |
+| `public/chrome-extension/options.html` | Settings page UI |
+| `public/chrome-extension/options.js` | Settings page logic |
+| `public/chrome-extension/note-popup.html` | Share with note popup UI |
+| `public/chrome-extension/note-popup.js` | Share with note popup logic |
+| `public/chrome-extension/icons/` | Extension icons (16, 48, 128px) |
 | `scripts/generate-extension-icons.ts` | Icon generation script |
 | `src/app/api/extension/route.ts` | API endpoint to download extension as zip |
+| `src/app/api/share/captured/route.ts` | API endpoint to receive captured page content |
 | `src/components/browser-extension-card.tsx` | Dashboard download card component |
 
 ### Extension Features
 
-- **Click icon**: Instantly share current page URL to ob-share
+- **Click icon**: Share using default mode (URL only or full page capture)
 - **Right-click menu**: Share page, share with note, share link, share selection
-- **Settings**: Configure custom ob-share URL (default: https://ob-share.up.railway.app)
-- **Share with note**: Add a note/context when sharing
+- **Share URL only**: Fast sharing, server fetches content
+- **Capture full page**: Captures complete HTML, text, article content, and metadata directly from browser
+- **Settings**: Configure ob-share URL and default share mode
+
+### Share Modes
+
+The extension supports two share modes:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `url_only` (default) | Shares just the URL, server fetches content | Public pages, fast sharing |
+| `full_page` | Captures full page content from browser | Private/authenticated pages |
+
+### Full Page Capture
+
+Full page capture is essential for private/authenticated content:
+
+1. Extension runs JavaScript in the page context (has access to authenticated content)
+2. Captures: full HTML, body text, article content (if detected), metadata, selection
+3. POSTs captured content to `/api/share/captured`
+4. Server stores content and redirects to share page
+5. Vault receives pre-captured content instead of fetching URL
+
+**Captured data structure:**
+```typescript
+interface CapturedPageData {
+  url: string;
+  title: string;
+  html: string;           // Full page HTML
+  bodyText: string;       // Full page text content
+  articleHtml?: string;   // Extracted article HTML (if found)
+  articleText?: string;   // Extracted article text (if found)
+  selection?: string;     // Selected text at capture time
+  meta: {
+    description?: string;
+    author?: string;
+    publishedTime?: string;
+    siteName?: string;
+    ogImage?: string;
+  };
+  userNote?: string;      // User-added note
+  capturedAt: string;     // ISO timestamp
+}
+```
 
 ### Modifying Extension Behavior
 
 | Change | Files to Update |
 |--------|-----------------|
-| Change default URL | `chrome-extension/background.js` - `DEFAULT_OB_SHARE_URL` |
-| Add context menu items | `chrome-extension/background.js` - `chrome.contextMenus.create()` |
-| Change settings UI | `chrome-extension/options.html`, `chrome-extension/options.js` |
-| Change note popup UI | `chrome-extension/note-popup.html`, `chrome-extension/note-popup.js` |
+| Change default URL | `public/chrome-extension/background.js` - `DEFAULT_OB_SHARE_URL` |
+| Add context menu items | `public/chrome-extension/background.js` - `chrome.contextMenus.create()` |
+| Change capture logic | `public/chrome-extension/background.js` - `capturePageContent()` |
+| Modify article extraction | `public/chrome-extension/background.js` - `extractArticle()` selectors |
+| Change settings UI | `public/chrome-extension/options.html`, `options.js` |
+| Change note popup UI | `public/chrome-extension/note-popup.html`, `note-popup.js` |
+| Modify captured content handling | `src/app/api/share/captured/route.ts` |
+| Change vault content format | `src/lib/vault.ts` - `generateMarkdownContent()` |
 | Regenerate icons | Run `pnpm tsx scripts/generate-extension-icons.ts` |
 | Change download UI | `src/components/browser-extension-card.tsx` |
 
@@ -235,6 +282,7 @@ A private Chrome extension for sharing links directly from desktop browsers.
 4. User enables Developer mode
 5. User clicks "Load unpacked" and selects folder
 6. Extension is installed and ready to use
+7. User can configure default share mode in extension settings
 
 ## Vault Integration
 
