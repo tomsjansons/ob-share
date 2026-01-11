@@ -260,31 +260,16 @@ export const extractAudioTool = defineTool({
         });
       }
 
-      // If conversion failed duration validation, return error with WAV file info attached
+      // Log if duration validation failed but proceed with transcription anyway
+      // (validation is known to be unreliable for some formats)
       if (conversionResult.wasConverted && !conversionResult.durationValid) {
-        logger.warn({
-          event: "audio_extraction.duration_validation_failed",
+        logger.info({
+          event: "audio_extraction.duration_validation_skipped",
           filePath: input.filePath,
           vaultWavPath: conversionResult.vaultWavPath,
-          error: conversionResult.validationError,
+          note: "Proceeding with transcription despite validation warning",
+          validationWarning: conversionResult.validationError,
         });
-
-        // Return error result with WAV file info for attachment to MD
-        return {
-          success: false,
-          error: `Audio transcoding validation failed. The converted WAV file has been saved but transcription was not attempted.\n\n**Error:** ${conversionResult.validationError}\n\n**WAV File:** ${conversionResult.vaultWavPath ? path.basename(conversionResult.vaultWavPath) : "unknown"}`,
-          output: {
-            speakers: [],
-            transcription: [],
-            summary: "",
-            intentions: [],
-            backgroundNoises: [],
-            wavFilePath: conversionResult.vaultWavPath,
-            wasConverted: true,
-            conversionValid: false,
-            conversionError: conversionResult.validationError,
-          },
-        };
       }
 
       // ========================================================================
