@@ -901,6 +901,35 @@ export const extractUrlTool = defineTool({
         },
       });
 
+      // Check for authentication errors - these should not be retried
+      // Return success with an auth wall message to prevent retry loops
+      if (response.status === 401 || response.status === 403) {
+        logger.info({
+          event: "url_extraction.auth_error",
+          url: input.url,
+          status: response.status,
+          statusText: response.statusText,
+        });
+
+        return {
+          success: true,
+          output: {
+            url: input.url,
+            title: "Content Behind Authentication Wall",
+            description: `This URL requires authentication (HTTP ${response.status})`,
+            mainContent: `This content is behind an authentication wall and cannot be accessed automatically.\n\nURL: ${input.url}\nStatus: ${response.status} ${response.statusText}\n\nTo access this content, you may need to:\n- Log in to the website directly\n- Use a browser extension with saved credentials\n- Share the content using the browser extension's "full page capture" mode while logged in`,
+            summary: `Content requires authentication (HTTP ${response.status}). Cannot be extracted automatically.`,
+            keyPoints: [
+              `Authentication required (HTTP ${response.status})`,
+              "Manual login or browser extension capture may be needed",
+            ],
+            type: "authentication-required",
+            images: [],
+            links: [],
+          },
+        };
+      }
+
       if (!response.ok) {
         throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
       }
