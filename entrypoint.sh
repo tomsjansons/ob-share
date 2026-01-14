@@ -41,22 +41,22 @@ if mountpoint -q /data 2>/dev/null; then
         echo "Linked /home/obsidian/.config/obsidian -> /data/obsidian-config"
     fi
 
-    # Set up Chromium profile symlink (for shared cookies/sessions)
-    if [ -d /home/obsidian/.config/chromium ] && [ ! -L /home/obsidian/.config/chromium ]; then
+    # Set up Chrome profile symlink (for shared cookies/sessions)
+    if [ -d /home/obsidian/.config/google-chrome ] && [ ! -L /home/obsidian/.config/google-chrome ]; then
         # Move any existing content to volume
-        if [ "$(ls -A /home/obsidian/.config/chromium 2>/dev/null)" ]; then
-            cp -rn /home/obsidian/.config/chromium/* /data/chromium-profile/ 2>/dev/null || true
+        if [ "$(ls -A /home/obsidian/.config/google-chrome 2>/dev/null)" ]; then
+            cp -rn /home/obsidian/.config/google-chrome/* /data/chromium-profile/ 2>/dev/null || true
         fi
-        rm -rf /home/obsidian/.config/chromium
+        rm -rf /home/obsidian/.config/google-chrome
     fi
-    if [ ! -L /home/obsidian/.config/chromium ]; then
-        ln -s /data/chromium-profile /home/obsidian/.config/chromium
-        echo "Linked /home/obsidian/.config/chromium -> /data/chromium-profile"
+    if [ ! -L /home/obsidian/.config/google-chrome ]; then
+        ln -s /data/chromium-profile /home/obsidian/.config/google-chrome
+        echo "Linked /home/obsidian/.config/google-chrome -> /data/chromium-profile"
     fi
 
     chown -h obsidian:obsidian /home/obsidian/Documents
     chown -h obsidian:obsidian /home/obsidian/.config/obsidian
-    chown -h obsidian:obsidian /home/obsidian/.config/chromium
+    chown -h obsidian:obsidian /home/obsidian/.config/google-chrome
 else
     echo "[ENTRYPOINT] /data is NOT a mountpoint - creating directory for database..."
     mkdir -p /data
