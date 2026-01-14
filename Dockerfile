@@ -108,6 +108,9 @@ RUN mkdir -p /home/obsidian/.vnc \
     && chown obsidian:obsidian /data \
     && chown obsidian:obsidian /app
 
+# Add Chrome alias with Docker stability flags
+RUN echo "alias chrome='google-chrome-stable --user-data-dir=/data/chromium-profile --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-software-rasterizer --disable-setuid-sandbox --disable-features=VizDisplayCompositor'" >> /home/obsidian/.bashrc
+
 # Copy Next.js standalone build from builder
 COPY --from=nextjs-builder /app/.next/standalone /app
 COPY --from=nextjs-builder /app/.next/static /app/.next/static
