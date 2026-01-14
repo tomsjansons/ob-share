@@ -192,6 +192,9 @@ export class BrowserService {
       const page = await this.browser.newPage();
 
       try {
+        // Ensure JavaScript is enabled (critical for SPAs)
+        await page.setJavaScriptEnabled(true);
+
         // Set viewport
         await page.setViewport({ width: 1280, height: 720 });
 
@@ -323,20 +326,74 @@ export class BrowserService {
 
   /**
    * Wait for SPA content to render
-   * Uses a simple fixed delay to let JavaScript render content
+   * Uses multiple strategies to ensure JavaScript has executed and content is rendered
    */
   private async waitForSpaContent(page: Page, url: string, timeout: number): Promise<void> {
-    // Wait for the full timeout to let SPAs render their content
-    // This is simpler and more reliable than trying to detect specific selectors
-    const waitTime = Math.min(timeout, 30000);
+    const startTime = Date.now();
 
     logger.info({
       event: "browser.waiting_for_spa",
       url,
-      waitTime,
+      timeout,
     });
 
-    await new Promise(resolve => setTimeout(resolve, waitTime));
+    // First, verify JavaScript is actually working
+    const jsEnabled = await page.evaluate(() => {
+      return typeof window !== "undefined" && typeof document !== "undefined";
+    });
+
+    logger.info({
+      event: "browser.js_check",
+      url,
+      jsEnabled,
+    });
+
+    // Wait for the DOM to be fully loaded and stable
+    try {
+      await page.waitForFunction(
+        () => {
+          // Check if document is ready
+          if (document.readyState !== "complete") return false;
+
+          // Check if body has meaningful content (not just loading placeholders)
+          const body = document.body;
+          if (!body) return false;
+
+          // Check for common SPA loading indicators being gone
+          const loadingIndicators = document.querySelectorAll(
+            '[class*="loading"], [class*="spinner"], [class*="skeleton"], [data-loading="true"]'
+          );
+          for (const indicator of loadingIndicators) {
+            const style = window.getComputedStyle(indicator);
+            if (style.display !== "none" && style.visibility !== "hidden") {
+              return false; // Still loading
+            }
+          }
+
+          // Check that body has substantial text content (not just scripts/styles)
+          const textLength = body.innerText?.trim().length ?? 0;
+          return textLength > 100; // At least some content
+        },
+        { timeout: Math.min(timeout, 15000) }
+      );
+    } catch (waitError) {
+      logger.warn({
+        event: "browser.spa_wait_timeout",
+        url,
+        error: waitError instanceof Error ? waitError.message : String(waitError),
+      });
+      // Continue anyway - we'll try to get whatever content is there
+    }
+
+    // Additional short delay to let any final renders complete
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const elapsed = Date.now() - startTime;
+    logger.info({
+      event: "browser.spa_wait_complete",
+      url,
+      elapsedMs: elapsed,
+    });
   }
 
   /**
