@@ -1,11 +1,13 @@
 /**
  * Browser Service - Manages headless Chromium for web fetching
  *
- * Uses the same profile as the UI Chromium so sessions/cookies are shared.
+ * Launches a headless browser and injects cookies from the UI Chrome profile.
  * This enables fetching authenticated content from services the user has
- * logged into via VNC.
+ * logged into via VNC, without locking conflicts.
  */
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type Page, type CookieParam } from "puppeteer-core";
+import path from "path";
+import Database from "better-sqlite3";
 import { logger as baseLogger } from "@/lib/logger";
 
 const logger = baseLogger.child({ module: "browser-service" });
@@ -57,6 +59,108 @@ export interface BrowserFetchResult {
 }
 
 /**
+ * Chrome cookie row from SQLite database
+ */
+interface ChromeCookieRow {
+  host_key: string;
+  name: string;
+  value: string;
+  path: string;
+  expires_utc: number;
+  is_secure: number;
+  is_httponly: number;
+  samesite: number;
+}
+
+/**
+ * Read cookies from Chrome's SQLite database for a specific domain
+ */
+function readCookiesFromProfile(domain: string): CookieParam[] {
+  const cookiesDbPath = path.join(PROFILE_PATH, "Default", "Cookies");
+  const cookies: CookieParam[] = [];
+
+  try {
+    const db = new Database(cookiesDbPath, { readonly: true, fileMustExist: true });
+
+    try {
+      // Get cookies for the domain and its subdomains
+      const stmt = db.prepare(`
+        SELECT host_key, name, value, path, expires_utc, is_secure, is_httponly, samesite
+        FROM cookies
+        WHERE host_key LIKE ? OR host_key LIKE ?
+      `);
+
+      const rows = stmt.all(`%${domain}`, `.${domain}`) as ChromeCookieRow[];
+
+      for (const row of rows) {
+        // Chrome stores expiry as microseconds since Windows epoch (Jan 1, 1601)
+        // Convert to Unix timestamp in seconds
+        const windowsToUnixDiff = 11644473600; // seconds between 1601 and 1970
+        const expiresUnix = row.expires_utc > 0
+          ? Math.floor(row.expires_utc / 1000000) - windowsToUnixDiff
+          : -1;
+
+        // Map Chrome's samesite values to Puppeteer's
+        let sameSite: "Strict" | "Lax" | "None" | undefined;
+        switch (row.samesite) {
+          case 0: sameSite = undefined; break; // Unspecified
+          case 1: sameSite = "Lax"; break;
+          case 2: sameSite = "Strict"; break;
+          case 3: sameSite = "None"; break;
+          default: sameSite = undefined;
+        }
+
+        cookies.push({
+          name: row.name,
+          value: row.value,
+          domain: row.host_key,
+          path: row.path,
+          expires: expiresUnix,
+          httpOnly: row.is_httponly === 1,
+          secure: row.is_secure === 1,
+          sameSite,
+        });
+      }
+
+      logger.info({
+        event: "browser.cookies_read",
+        domain,
+        cookieCount: cookies.length,
+      });
+    } finally {
+      db.close();
+    }
+  } catch (error) {
+    logger.warn({
+      event: "browser.cookies_read_error",
+      domain,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return cookies;
+}
+
+/**
+ * Extract the main domain from a URL for cookie lookup
+ */
+function extractDomain(url: string): string {
+  try {
+    const hostname = new URL(url).hostname;
+    // For domains like "twitter.com", "www.twitter.com", "mobile.twitter.com"
+    // we want to get cookies for "twitter.com"
+    const parts = hostname.split(".");
+    if (parts.length >= 2) {
+      // Return last two parts (e.g., "twitter.com")
+      return parts.slice(-2).join(".");
+    }
+    return hostname;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Browser Service class for managing headless Chromium
  */
 export class BrowserService {
@@ -94,13 +198,13 @@ export class BrowserService {
     logger.info({
       event: "browser.launching",
       executablePath: CHROMIUM_PATH,
-      profilePath: PROFILE_PATH,
     });
 
     try {
+      // Launch without userDataDir - we'll inject cookies instead
+      // This avoids profile locking conflicts with the UI Chrome
       this.browser = await puppeteer.launch({
         executablePath: CHROMIUM_PATH,
-        userDataDir: PROFILE_PATH,
         headless: true,
         args: [
           "--no-sandbox",
@@ -163,6 +267,21 @@ export class BrowserService {
         // Set custom user agent if provided
         if (options.userAgent) {
           await page.setUserAgent(options.userAgent);
+        }
+
+        // Inject cookies from the UI Chrome profile for this domain
+        const domain = extractDomain(url);
+        if (domain) {
+          const cookies = readCookiesFromProfile(domain);
+          if (cookies.length > 0) {
+            await page.setCookie(...cookies);
+            logger.info({
+              event: "browser.cookies_injected",
+              url,
+              domain,
+              cookieCount: cookies.length,
+            });
+          }
         }
 
         // Navigate to URL
