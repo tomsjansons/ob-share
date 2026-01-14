@@ -229,6 +229,9 @@ export class BrowserService {
           };
         }
 
+        // Wait for SPA content to render based on the site
+        await this.waitForSpaContent(page, url, timeout);
+
         // Wait for specific selector if provided
         if (options.waitForSelector) {
           try {
@@ -307,6 +310,24 @@ export class BrowserService {
         error: errorMessage,
       };
     }
+  }
+
+  /**
+   * Wait for SPA content to render
+   * Uses a simple fixed delay to let JavaScript render content
+   */
+  private async waitForSpaContent(page: Page, url: string, timeout: number): Promise<void> {
+    // Wait for the full timeout to let SPAs render their content
+    // This is simpler and more reliable than trying to detect specific selectors
+    const waitTime = Math.min(timeout, 30000);
+
+    logger.info({
+      event: "browser.waiting_for_spa",
+      url,
+      waitTime,
+    });
+
+    await new Promise(resolve => setTimeout(resolve, waitTime));
   }
 
   /**
