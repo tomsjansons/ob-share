@@ -1,9 +1,11 @@
 /**
- * Browser Service - Manages headless Chromium for web fetching
+ * Browser Service - Manages browser control for web fetching
  *
- * Uses the same profile as the UI Chromium so sessions/cookies are shared.
- * This enables fetching authenticated content from services the user has
- * logged into via VNC.
+ * Connects to the UI Chrome browser via remote debugging to open tabs and fetch content.
+ * This uses the same browser session that the user logs into via VNC, so all cookies,
+ * localStorage, and sessions are automatically available.
+ *
+ * Falls back to launching a headless browser if the UI Chrome isn't available.
  */
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { logger as baseLogger } from "@/lib/logger";
@@ -12,7 +14,7 @@ const logger = baseLogger.child({ module: "browser-service" });
 
 // Paths from environment or defaults
 const CHROMIUM_PATH = process.env.CHROMIUM_EXECUTABLE_PATH ?? "/usr/bin/google-chrome-stable";
-const PROFILE_PATH = process.env.CHROMIUM_PROFILE_PATH ?? "/data/chromium-profile";
+const CHROME_DEBUG_URL = "http://127.0.0.1:9222";
 
 /**
  * Options for fetching a page
@@ -57,50 +59,79 @@ export interface BrowserFetchResult {
 }
 
 /**
- * Browser Service class for managing headless Chromium
+ * Browser Service class for managing browser connections
  */
 export class BrowserService {
   private browser: Browser | null = null;
-  private isLaunching = false;
-  private launchPromise: Promise<void> | null = null;
+  private isConnecting = false;
+  private connectPromise: Promise<void> | null = null;
+  private isOwnedBrowser = false; // true if we launched it, false if we connected to existing
 
   /**
-   * Launch the browser if not already running
+   * Connect to the UI Chrome browser or launch a new one
    */
-  async launch(): Promise<void> {
-    // If already launched, return
+  async connect(): Promise<void> {
+    // If already connected, return
     if (this.browser?.connected) {
       return;
     }
 
-    // If currently launching, wait for that to complete
-    if (this.isLaunching && this.launchPromise) {
-      await this.launchPromise;
+    // If currently connecting, wait for that to complete
+    if (this.isConnecting && this.connectPromise) {
+      await this.connectPromise;
       return;
     }
 
-    this.isLaunching = true;
-    this.launchPromise = this.doLaunch();
+    this.isConnecting = true;
+    this.connectPromise = this.doConnect();
 
     try {
-      await this.launchPromise;
+      await this.connectPromise;
     } finally {
-      this.isLaunching = false;
-      this.launchPromise = null;
+      this.isConnecting = false;
+      this.connectPromise = null;
     }
   }
 
-  private async doLaunch(): Promise<void> {
+  private async doConnect(): Promise<void> {
+    // First, try to connect to the running UI Chrome
+    try {
+      logger.info({
+        event: "browser.connecting",
+        debugUrl: CHROME_DEBUG_URL,
+      });
+
+      this.browser = await puppeteer.connect({
+        browserURL: CHROME_DEBUG_URL,
+      });
+
+      this.isOwnedBrowser = false;
+
+      logger.info({ event: "browser.connected_to_ui" });
+
+      // Handle browser disconnect
+      this.browser.on("disconnected", () => {
+        logger.info({ event: "browser.disconnected" });
+        this.browser = null;
+      });
+
+      return;
+    } catch (connectError) {
+      logger.warn({
+        event: "browser.connect_failed",
+        error: connectError instanceof Error ? connectError.message : String(connectError),
+      });
+    }
+
+    // Fall back to launching a new headless browser
     logger.info({
-      event: "browser.launching",
+      event: "browser.launching_fallback",
       executablePath: CHROMIUM_PATH,
-      profilePath: PROFILE_PATH,
     });
 
     try {
       this.browser = await puppeteer.launch({
         executablePath: CHROMIUM_PATH,
-        userDataDir: PROFILE_PATH,
         headless: true,
         args: [
           "--no-sandbox",
@@ -118,19 +149,21 @@ export class BrowserService {
         ],
       });
 
-      logger.info({ event: "browser.launched" });
+      this.isOwnedBrowser = true;
+
+      logger.info({ event: "browser.launched_fallback" });
 
       // Handle browser disconnect
       this.browser.on("disconnected", () => {
         logger.info({ event: "browser.disconnected" });
         this.browser = null;
       });
-    } catch (error) {
+    } catch (launchError) {
       logger.error({
         event: "browser.launch_error",
-        error: error instanceof Error ? error.message : String(error),
+        error: launchError instanceof Error ? launchError.message : String(launchError),
       });
-      throw error;
+      throw launchError;
     }
   }
 
@@ -141,10 +174,10 @@ export class BrowserService {
     const timeout = options.timeout ?? 30000;
 
     try {
-      await this.launch();
+      await this.connect();
 
       if (!this.browser) {
-        throw new Error("Browser failed to launch");
+        throw new Error("Browser failed to connect");
       }
 
       logger.info({
@@ -152,8 +185,10 @@ export class BrowserService {
         url,
         timeout,
         waitForSelector: options.waitForSelector,
+        connectedToUi: !this.isOwnedBrowser,
       });
 
+      // Open a new tab
       const page = await this.browser.newPage();
 
       try {
@@ -248,6 +283,7 @@ export class BrowserService {
           success: true,
         };
       } finally {
+        // Close the tab
         await page.close();
       }
     } catch (error) {
@@ -329,19 +365,26 @@ export class BrowserService {
   }
 
   /**
-   * Check if the browser is currently running
+   * Check if the browser is currently connected
    */
   isRunning(): boolean {
     return this.browser?.connected ?? false;
   }
 
   /**
-   * Close the browser
+   * Close the browser connection (only if we launched it)
    */
   async close(): Promise<void> {
     if (this.browser) {
-      logger.info({ event: "browser.closing" });
-      await this.browser.close();
+      if (this.isOwnedBrowser) {
+        // Only close if we launched it
+        logger.info({ event: "browser.closing" });
+        await this.browser.close();
+      } else {
+        // Just disconnect, don't close the UI browser
+        logger.info({ event: "browser.disconnecting" });
+        this.browser.disconnect();
+      }
       this.browser = null;
     }
   }
