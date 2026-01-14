@@ -1,20 +1,20 @@
 /**
- * Browser Service - Manages headless Chromium for web fetching
+ * Browser Service - Manages browser control for web fetching
  *
- * Launches a headless browser and injects cookies from the UI Chrome profile.
- * This enables fetching authenticated content from services the user has
- * logged into via VNC, without locking conflicts.
+ * Connects to the UI Chrome browser via remote debugging to open tabs and fetch content.
+ * This uses the same browser session that the user logs into via VNC, so all cookies,
+ * localStorage, and sessions are automatically available.
+ *
+ * Falls back to launching a headless browser if the UI Chrome isn't available.
  */
-import puppeteer, { type Browser, type Page, type CookieParam } from "puppeteer-core";
-import path from "path";
-import Database from "better-sqlite3";
+import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { logger as baseLogger } from "@/lib/logger";
 
 const logger = baseLogger.child({ module: "browser-service" });
 
 // Paths from environment or defaults
 const CHROMIUM_PATH = process.env.CHROMIUM_EXECUTABLE_PATH ?? "/usr/bin/google-chrome-stable";
-const PROFILE_PATH = process.env.CHROMIUM_PROFILE_PATH ?? "/data/chromium-profile";
+const CHROME_DEBUG_URL = "http://127.0.0.1:9222";
 
 /**
  * Options for fetching a page
@@ -59,150 +59,77 @@ export interface BrowserFetchResult {
 }
 
 /**
- * Chrome cookie row from SQLite database
- */
-interface ChromeCookieRow {
-  host_key: string;
-  name: string;
-  value: string;
-  path: string;
-  expires_utc: number;
-  is_secure: number;
-  is_httponly: number;
-  samesite: number;
-}
-
-/**
- * Read cookies from Chrome's SQLite database for a specific domain
- */
-function readCookiesFromProfile(domain: string): CookieParam[] {
-  const cookiesDbPath = path.join(PROFILE_PATH, "Default", "Cookies");
-  const cookies: CookieParam[] = [];
-
-  try {
-    const db = new Database(cookiesDbPath, { readonly: true, fileMustExist: true });
-
-    try {
-      // Get cookies for the domain and its subdomains
-      const stmt = db.prepare(`
-        SELECT host_key, name, value, path, expires_utc, is_secure, is_httponly, samesite
-        FROM cookies
-        WHERE host_key LIKE ? OR host_key LIKE ?
-      `);
-
-      const rows = stmt.all(`%${domain}`, `.${domain}`) as ChromeCookieRow[];
-
-      for (const row of rows) {
-        // Chrome stores expiry as microseconds since Windows epoch (Jan 1, 1601)
-        // Convert to Unix timestamp in seconds
-        const windowsToUnixDiff = 11644473600; // seconds between 1601 and 1970
-        const expiresUnix = row.expires_utc > 0
-          ? Math.floor(row.expires_utc / 1000000) - windowsToUnixDiff
-          : -1;
-
-        // Map Chrome's samesite values to Puppeteer's
-        let sameSite: "Strict" | "Lax" | "None" | undefined;
-        switch (row.samesite) {
-          case 0: sameSite = undefined; break; // Unspecified
-          case 1: sameSite = "Lax"; break;
-          case 2: sameSite = "Strict"; break;
-          case 3: sameSite = "None"; break;
-          default: sameSite = undefined;
-        }
-
-        cookies.push({
-          name: row.name,
-          value: row.value,
-          domain: row.host_key,
-          path: row.path,
-          expires: expiresUnix,
-          httpOnly: row.is_httponly === 1,
-          secure: row.is_secure === 1,
-          sameSite,
-        });
-      }
-
-      logger.info({
-        event: "browser.cookies_read",
-        domain,
-        cookieCount: cookies.length,
-      });
-    } finally {
-      db.close();
-    }
-  } catch (error) {
-    logger.warn({
-      event: "browser.cookies_read_error",
-      domain,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  return cookies;
-}
-
-/**
- * Extract the main domain from a URL for cookie lookup
- */
-function extractDomain(url: string): string {
-  try {
-    const hostname = new URL(url).hostname;
-    // For domains like "twitter.com", "www.twitter.com", "mobile.twitter.com"
-    // we want to get cookies for "twitter.com"
-    const parts = hostname.split(".");
-    if (parts.length >= 2) {
-      // Return last two parts (e.g., "twitter.com")
-      return parts.slice(-2).join(".");
-    }
-    return hostname;
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Browser Service class for managing headless Chromium
+ * Browser Service class for managing browser connections
  */
 export class BrowserService {
   private browser: Browser | null = null;
-  private isLaunching = false;
-  private launchPromise: Promise<void> | null = null;
+  private isConnecting = false;
+  private connectPromise: Promise<void> | null = null;
+  private isOwnedBrowser = false; // true if we launched it, false if we connected to existing
 
   /**
-   * Launch the browser if not already running
+   * Connect to the UI Chrome browser or launch a new one
    */
-  async launch(): Promise<void> {
-    // If already launched, return
+  async connect(): Promise<void> {
+    // If already connected, return
     if (this.browser?.connected) {
       return;
     }
 
-    // If currently launching, wait for that to complete
-    if (this.isLaunching && this.launchPromise) {
-      await this.launchPromise;
+    // If currently connecting, wait for that to complete
+    if (this.isConnecting && this.connectPromise) {
+      await this.connectPromise;
       return;
     }
 
-    this.isLaunching = true;
-    this.launchPromise = this.doLaunch();
+    this.isConnecting = true;
+    this.connectPromise = this.doConnect();
 
     try {
-      await this.launchPromise;
+      await this.connectPromise;
     } finally {
-      this.isLaunching = false;
-      this.launchPromise = null;
+      this.isConnecting = false;
+      this.connectPromise = null;
     }
   }
 
-  private async doLaunch(): Promise<void> {
+  private async doConnect(): Promise<void> {
+    // First, try to connect to the running UI Chrome
+    try {
+      logger.info({
+        event: "browser.connecting",
+        debugUrl: CHROME_DEBUG_URL,
+      });
+
+      this.browser = await puppeteer.connect({
+        browserURL: CHROME_DEBUG_URL,
+      });
+
+      this.isOwnedBrowser = false;
+
+      logger.info({ event: "browser.connected_to_ui" });
+
+      // Handle browser disconnect
+      this.browser.on("disconnected", () => {
+        logger.info({ event: "browser.disconnected" });
+        this.browser = null;
+      });
+
+      return;
+    } catch (connectError) {
+      logger.warn({
+        event: "browser.connect_failed",
+        error: connectError instanceof Error ? connectError.message : String(connectError),
+      });
+    }
+
+    // Fall back to launching a new headless browser
     logger.info({
-      event: "browser.launching",
+      event: "browser.launching_fallback",
       executablePath: CHROMIUM_PATH,
     });
 
     try {
-      // Launch without userDataDir - we'll inject cookies instead
-      // This avoids profile locking conflicts with the UI Chrome
       this.browser = await puppeteer.launch({
         executablePath: CHROMIUM_PATH,
         headless: true,
@@ -222,19 +149,21 @@ export class BrowserService {
         ],
       });
 
-      logger.info({ event: "browser.launched" });
+      this.isOwnedBrowser = true;
+
+      logger.info({ event: "browser.launched_fallback" });
 
       // Handle browser disconnect
       this.browser.on("disconnected", () => {
         logger.info({ event: "browser.disconnected" });
         this.browser = null;
       });
-    } catch (error) {
+    } catch (launchError) {
       logger.error({
         event: "browser.launch_error",
-        error: error instanceof Error ? error.message : String(error),
+        error: launchError instanceof Error ? launchError.message : String(launchError),
       });
-      throw error;
+      throw launchError;
     }
   }
 
@@ -245,10 +174,10 @@ export class BrowserService {
     const timeout = options.timeout ?? 30000;
 
     try {
-      await this.launch();
+      await this.connect();
 
       if (!this.browser) {
-        throw new Error("Browser failed to launch");
+        throw new Error("Browser failed to connect");
       }
 
       logger.info({
@@ -256,8 +185,10 @@ export class BrowserService {
         url,
         timeout,
         waitForSelector: options.waitForSelector,
+        connectedToUi: !this.isOwnedBrowser,
       });
 
+      // Open a new tab
       const page = await this.browser.newPage();
 
       try {
@@ -267,21 +198,6 @@ export class BrowserService {
         // Set custom user agent if provided
         if (options.userAgent) {
           await page.setUserAgent(options.userAgent);
-        }
-
-        // Inject cookies from the UI Chrome profile for this domain
-        const domain = extractDomain(url);
-        if (domain) {
-          const cookies = readCookiesFromProfile(domain);
-          if (cookies.length > 0) {
-            await page.setCookie(...cookies);
-            logger.info({
-              event: "browser.cookies_injected",
-              url,
-              domain,
-              cookieCount: cookies.length,
-            });
-          }
         }
 
         // Navigate to URL
@@ -367,6 +283,7 @@ export class BrowserService {
           success: true,
         };
       } finally {
+        // Close the tab
         await page.close();
       }
     } catch (error) {
@@ -448,19 +365,26 @@ export class BrowserService {
   }
 
   /**
-   * Check if the browser is currently running
+   * Check if the browser is currently connected
    */
   isRunning(): boolean {
     return this.browser?.connected ?? false;
   }
 
   /**
-   * Close the browser
+   * Close the browser connection (only if we launched it)
    */
   async close(): Promise<void> {
     if (this.browser) {
-      logger.info({ event: "browser.closing" });
-      await this.browser.close();
+      if (this.isOwnedBrowser) {
+        // Only close if we launched it
+        logger.info({ event: "browser.closing" });
+        await this.browser.close();
+      } else {
+        // Just disconnect, don't close the UI browser
+        logger.info({ event: "browser.disconnecting" });
+        this.browser.disconnect();
+      }
       this.browser = null;
     }
   }
