@@ -57,6 +57,12 @@ if mountpoint -q /data 2>/dev/null; then
     chown -h obsidian:obsidian /home/obsidian/Documents
     chown -h obsidian:obsidian /home/obsidian/.config/obsidian
     chown -h obsidian:obsidian /home/obsidian/.config/google-chrome
+
+    # Clean Chrome lock files (prevents "profile locked by another hostname" error after redeployment)
+    echo "[ENTRYPOINT] Cleaning Chrome lock files..."
+    rm -f /data/chromium-profile/SingletonLock 2>/dev/null || true
+    rm -f /data/chromium-profile/SingletonSocket 2>/dev/null || true
+    rm -f /data/chromium-profile/SingletonCookie 2>/dev/null || true
 else
     echo "[ENTRYPOINT] /data is NOT a mountpoint - creating directory for database..."
     mkdir -p /data
