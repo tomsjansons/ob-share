@@ -246,10 +246,17 @@ export class BrowserService {
           }
         }
 
-        // Extract page content
+        // Extract page content from the rendered DOM
+        // Use page.evaluate() to get the actual current DOM state (not the original HTML)
         const title = await page.title();
-        const html = await page.content();
-        const text = await page.evaluate(() => document.body?.innerText ?? "");
+        const { html, text } = await page.evaluate(() => {
+          // Force a reflow to ensure DOM is fully rendered
+          document.body.offsetHeight;
+          return {
+            html: document.documentElement.outerHTML,
+            text: document.body?.innerText ?? "",
+          };
+        });
         const finalUrl = page.url();
 
         // Check if page appears authenticated
@@ -272,6 +279,8 @@ export class BrowserService {
           htmlLength: html.length,
           textLength: text.length,
           isAuthenticated,
+          // Log first 500 chars of text to verify we're getting rendered content
+          textPreview: text.slice(0, 500),
         });
 
         return {
