@@ -1,8 +1,8 @@
 /**
  * Cookie Store - Manages browser session status
  *
- * Reads from the shared Chromium profile to check login status
- * for various websites.
+ * Reads from the shared Chrome/Chromium profile to check login status
+ * for various websites. Works with both Google Chrome and Chromium.
  */
 import { promises as fs } from "fs";
 import path from "path";

@@ -63,13 +63,18 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     sqlite3 \
     ffmpeg \
-    # Chromium browser for UI and headless web fetching
-    chromium-browser \
-    chromium-codecs-ffmpeg-extra \
     # Additional fonts for better web rendering
     fonts-noto \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Google Chrome (works in Docker, unlike snap-based chromium-browser)
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 LTS
@@ -91,11 +96,11 @@ RUN wget -q "https://github.com/obsidianmd/obsidian-releases/releases/download/v
 # Create non-root user for running Obsidian
 RUN useradd -m -s /bin/bash obsidian
 
-# Create directories for VNC password, vault storage, data, and Chromium profile
+# Create directories for VNC password, vault storage, data, and Chrome profile
 RUN mkdir -p /home/obsidian/.vnc \
     && mkdir -p /home/obsidian/vault \
     && mkdir -p /home/obsidian/.config/obsidian \
-    && mkdir -p /home/obsidian/.config/chromium \
+    && mkdir -p /home/obsidian/.config/google-chrome \
     && mkdir -p /home/obsidian/Documents \
     && mkdir -p /data \
     && mkdir -p /app \
@@ -128,8 +133,8 @@ ENV SCREEN_RESOLUTION=1280x720x24
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-# Chromium paths for puppeteer-core
-ENV CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+# Chrome/Chromium paths for puppeteer-core
+ENV CHROMIUM_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 ENV CHROMIUM_PROFILE_PATH=/data/chromium-profile
 
 # Expose VNC and Next.js ports

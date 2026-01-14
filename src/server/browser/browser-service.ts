@@ -11,7 +11,7 @@ import { logger as baseLogger } from "@/lib/logger";
 const logger = baseLogger.child({ module: "browser-service" });
 
 // Paths from environment or defaults
-const CHROMIUM_PATH = process.env.CHROMIUM_EXECUTABLE_PATH ?? "/usr/bin/chromium-browser";
+const CHROMIUM_PATH = process.env.CHROMIUM_EXECUTABLE_PATH ?? "/usr/bin/google-chrome-stable";
 const PROFILE_PATH = process.env.CHROMIUM_PROFILE_PATH ?? "/data/chromium-profile";
 
 /**
