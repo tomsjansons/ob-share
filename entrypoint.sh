@@ -12,6 +12,7 @@ if mountpoint -q /data 2>/dev/null; then
     # Create subdirectories in the volume
     mkdir -p /data/Documents
     mkdir -p /data/obsidian-config
+    mkdir -p /data/chromium-profile
     chown -R obsidian:obsidian /data
 
     # Set up Documents symlink
@@ -40,8 +41,22 @@ if mountpoint -q /data 2>/dev/null; then
         echo "Linked /home/obsidian/.config/obsidian -> /data/obsidian-config"
     fi
 
+    # Set up Chromium profile symlink (for shared cookies/sessions)
+    if [ -d /home/obsidian/.config/chromium ] && [ ! -L /home/obsidian/.config/chromium ]; then
+        # Move any existing content to volume
+        if [ "$(ls -A /home/obsidian/.config/chromium 2>/dev/null)" ]; then
+            cp -rn /home/obsidian/.config/chromium/* /data/chromium-profile/ 2>/dev/null || true
+        fi
+        rm -rf /home/obsidian/.config/chromium
+    fi
+    if [ ! -L /home/obsidian/.config/chromium ]; then
+        ln -s /data/chromium-profile /home/obsidian/.config/chromium
+        echo "Linked /home/obsidian/.config/chromium -> /data/chromium-profile"
+    fi
+
     chown -h obsidian:obsidian /home/obsidian/Documents
     chown -h obsidian:obsidian /home/obsidian/.config/obsidian
+    chown -h obsidian:obsidian /home/obsidian/.config/chromium
 else
     echo "[ENTRYPOINT] /data is NOT a mountpoint - creating directory for database..."
     mkdir -p /data

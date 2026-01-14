@@ -30,6 +30,7 @@ This project provides a cloud-based, containerized Obsidian installation that:
 | Theming | next-themes | Dark/light mode support |
 | Process Manager | supervisord | Service orchestration |
 | Logging | Pino | Structured logging (JSON in prod, pretty in dev) |
+| Browser | Chromium + Puppeteer | Web fetching with JS rendering |
 | Application | Obsidian v1.7.7 | Note-taking app |
 
 ## Project Structure
@@ -83,7 +84,11 @@ ob-share/
 │   │   └── trpc/           # tRPC client/provider
 │   └── server/
 │       ├── db/             # Database schema and connection
-│       ├── trpc/           # tRPC routers (user, vault, settings, queue)
+│       ├── browser/        # Headless Chromium for web fetching
+│       │   ├── browser-service.ts  # Puppeteer browser management
+│       │   ├── cookie-store.ts     # Session/cookie status checking
+│       │   └── index.ts            # Module exports
+│       ├── trpc/           # tRPC routers (user, vault, settings, queue, browser)
 │       ├── jobs/           # Async job queue system
 │       │   ├── types.ts    # Type definitions
 │       │   ├── base-job.ts # Base job class
@@ -366,6 +371,38 @@ ob-share allows you to record audio notes directly from the dashboard and save t
 - Recordings are saved directly to your vault, never uploaded to external servers
 - You can disable audio recording at any time from Settings
 
+### Chromium Browser Sessions
+
+ob-share includes a full Chromium browser for two purposes:
+1. **UI Mode** - Log into websites via VNC to establish authenticated sessions
+2. **Headless Mode** - Automatically fetch JavaScript-rendered content and authenticated pages
+
+**How it works:**
+1. Connect to VNC (port 5900) and open Chromium from the desktop
+2. Log into websites you frequently share from (Twitter, Reddit, LinkedIn, etc.)
+3. Close Chromium when done - sessions are saved to persistent storage
+4. When you share a URL, the headless browser uses your saved sessions to fetch content
+5. This enables extraction of:
+   - **SPA content** - JavaScript-rendered pages that don't work with simple HTTP fetch
+   - **Authenticated content** - Private posts, subscription content, logged-in views
+
+**Session status:**
+- View logged-in status in Settings → Browser Sessions
+- Sessions persist across container restarts (stored in `/data/chromium-profile`)
+- Re-login as needed if sessions expire
+
+**Supported websites:**
+| Website | Detection |
+|---------|-----------|
+| Twitter/X | Account switcher button |
+| Reddit | User drawer button |
+| LinkedIn | Profile photo in nav |
+| Generic | Logout links, account links |
+
+**Configuration:**
+- Profile stored at: `/data/chromium-profile` (persistent volume)
+- Chromium can be launched via VNC or supervisorctl
+
 ### Automated Content Extraction
 
 ob-share includes an automated system that periodically scans your incoming folder for new notes and extracts information from attached media files.
@@ -444,6 +481,7 @@ The container uses supervisord to manage all services with automatic restart cap
 | 200 | openbox | Minimal window manager |
 | 300 | x11vnc | VNC server with password authentication |
 | 400 | obsidian | Obsidian application (runs last) |
+| 450 | chromium | Chromium browser (manual start via VNC) |
 
 ### Startup Flow
 
