@@ -63,6 +63,13 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     sqlite3 \
     ffmpeg \
+    # Chromium browser for UI and headless web fetching
+    chromium-browser \
+    chromium-codecs-ffmpeg-extra \
+    # Additional fonts for better web rendering
+    fonts-noto \
+    fonts-noto-cjk \
+    fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 LTS
@@ -84,10 +91,11 @@ RUN wget -q "https://github.com/obsidianmd/obsidian-releases/releases/download/v
 # Create non-root user for running Obsidian
 RUN useradd -m -s /bin/bash obsidian
 
-# Create directories for VNC password, vault storage, and data
+# Create directories for VNC password, vault storage, data, and Chromium profile
 RUN mkdir -p /home/obsidian/.vnc \
     && mkdir -p /home/obsidian/vault \
     && mkdir -p /home/obsidian/.config/obsidian \
+    && mkdir -p /home/obsidian/.config/chromium \
     && mkdir -p /home/obsidian/Documents \
     && mkdir -p /data \
     && mkdir -p /app \
@@ -120,6 +128,9 @@ ENV SCREEN_RESOLUTION=1280x720x24
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+# Chromium paths for puppeteer-core
+ENV CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV CHROMIUM_PROFILE_PATH=/data/chromium-profile
 
 # Expose VNC and Next.js ports
 EXPOSE 5900 3000

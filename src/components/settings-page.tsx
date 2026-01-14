@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff, Clock, Key, RefreshCw, Globe, Chrome } from "lucide-react";
+import { ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle, MapPin, MapPinOff, Mic, MicOff, Clock, Key, RefreshCw, Globe, Chrome, Monitor, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
 import { BrowserExtensionCard } from "@/components/browser-extension-card";
@@ -29,6 +29,102 @@ interface User {
 
 interface SettingsPageProps {
   user: User;
+}
+
+/**
+ * Browser Sessions Card - Shows status of logged-in sessions for various websites
+ * These sessions are used by headless Chromium to fetch authenticated content
+ */
+function BrowserSessionsCard() {
+  const sessionsQuery = trpc.browser.getSessions.useQuery(undefined, {
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  const sessions = sessionsQuery.data ?? [];
+  const loggedInCount = sessions.filter((s) => s.hasCookies).length;
+
+  return (
+    <div className="space-y-4 pt-4 border-t">
+      <div className="flex items-center gap-2">
+        <Monitor className="h-5 w-5 text-muted-foreground" />
+        <Label className="text-base font-medium">Browser Sessions</Label>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Log into websites via VNC to enable authenticated URL fetching for private content (Twitter, Reddit, etc.).
+      </p>
+
+      {/* Session Status */}
+      <div className="rounded-md border p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">Active Sessions</span>
+          <span className="text-sm text-muted-foreground">
+            {loggedInCount} of {sessions.length} sites
+          </span>
+        </div>
+
+        {sessionsQuery.isLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {sessions.map((session) => (
+              <div
+                key={session.domain}
+                className="flex items-center justify-between py-1"
+              >
+                <span className="text-sm">{session.displayName}</span>
+                {session.hasCookies ? (
+                  <span className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 px-2 py-0.5 rounded">
+                    Logged In
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                    Not Logged In
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Instructions */}
+      <div className="rounded-md bg-muted p-4 text-sm space-y-2">
+        <p className="font-medium">How to log in:</p>
+        <ol className="list-decimal ml-4 space-y-1 text-muted-foreground">
+          <li>Connect to VNC on port 5900</li>
+          <li>Open Chromium browser from the desktop</li>
+          <li>Log into the websites you want to access</li>
+          <li>Close browser when done - sessions are saved</li>
+        </ol>
+        <p className="text-xs text-muted-foreground mt-3">
+          Sessions are shared between the UI browser and headless fetching, so URLs you share will automatically use your logged-in sessions.
+        </p>
+      </div>
+
+      {/* Refresh Button */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => sessionsQuery.refetch()}
+        disabled={sessionsQuery.isFetching}
+        className="w-full"
+      >
+        {sessionsQuery.isFetching ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Checking...
+          </>
+        ) : (
+          <>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh Session Status
+          </>
+        )}
+      </Button>
+    </div>
+  );
 }
 
 export function SettingsPage({ user }: SettingsPageProps) {
@@ -872,6 +968,9 @@ export function SettingsPage({ user }: SettingsPageProps) {
               </p>
               <BrowserExtensionCard />
             </div>
+
+            {/* Browser Sessions Section */}
+            <BrowserSessionsCard />
 
             {/* Back Link */}
             <Link href="/dashboard" className="block pt-4">

@@ -33,6 +33,7 @@ Instructions for AI agents working on this repository.
 | Share target changes | Progressive Web App (PWA) > Web Share Target |
 | Dashboard changes | Navigation |
 | Audio feature changes | Audio Notes |
+| Browser/Chromium changes | Chromium Browser Sessions |
 
 ## Guidelines
 
@@ -399,6 +400,92 @@ The `AudioRecorder` class in `src/lib/audio.ts` provides:
 | Change recording UI | `src/components/audio-note-page.tsx` |
 | Change settings UI | `src/components/settings-page.tsx` |
 | Modify permission storage | `src/server/trpc/routers/settings.ts`
+
+## Chromium Browser Service
+
+The app includes a Chromium browser for UI login via VNC and headless web fetching with Puppeteer.
+
+### Key Browser Files
+
+| File | Purpose |
+|------|---------|
+| `src/server/browser/browser-service.ts` | Puppeteer browser management and page fetching |
+| `src/server/browser/cookie-store.ts` | Session/cookie status checking from Chromium profile |
+| `src/server/browser/index.ts` | Module exports |
+| `src/server/trpc/routers/browser.ts` | tRPC router for browser session status |
+| `src/components/settings-page.tsx` | BrowserSessionsCard component for UI |
+| `supervisord.conf` | Chromium program configuration (autostart=false) |
+| `entrypoint.sh` | Chromium profile directory setup |
+
+### Browser Service Architecture
+
+1. **UI Chromium**: Launched manually via VNC for user login
+2. **Headless Chromium**: Used by `extractUrlTool` for JavaScript rendering
+3. **Shared Profile**: Both use `/data/chromium-profile` for session sharing
+
+### BrowserService Class
+
+```typescript
+import { getBrowserService } from "@/server/browser";
+
+const browser = getBrowserService();
+
+// Fetch a page with JavaScript rendering
+const result = await browser.fetchPage("https://example.com", {
+  waitForSelector: ".content",  // Wait for specific element
+  waitForNetworkIdle: true,     // Wait for network to be idle
+  timeout: 30000,               // Timeout in ms
+  screenshot: true,             // Take screenshot
+});
+
+// Result includes:
+// - url, finalUrl (after redirects)
+// - title, html, text
+// - isAuthenticated (detected from page)
+// - status, success, error
+```
+
+### Cookie Store Functions
+
+```typescript
+import { getSessionStatus, hasBrowserBeenUsed } from "@/server/browser";
+
+// Get status for known domains
+const sessions = await getSessionStatus();
+// Returns: [{ domain, displayName, hasCookies, cookieCount, lastChecked }]
+
+// Check if browser has been used
+const used = await hasBrowserBeenUsed();
+```
+
+### Authentication Detection
+
+The browser service detects if a page is showing authenticated content:
+
+| Website | Detection Method |
+|---------|------------------|
+| Twitter/X | Account switcher button |
+| Reddit | User drawer button |
+| LinkedIn | Profile photo in nav |
+| Generic | Logout/signout links, account links |
+
+### Modifying Browser Behavior
+
+| Change | Files to Update |
+|--------|-----------------|
+| Add authentication detection | `src/server/browser/browser-service.ts` - `detectAuthentication()` |
+| Add known domains | `src/server/browser/cookie-store.ts` - `KNOWN_DOMAINS` |
+| Change browser args | `src/server/browser/browser-service.ts` - `doLaunch()` |
+| Modify session UI | `src/components/settings-page.tsx` - `BrowserSessionsCard` |
+| Add tRPC endpoints | `src/server/trpc/routers/browser.ts` |
+
+### URL Extraction with Browser
+
+The `extractUrlTool` in `ai-extraction-tools.ts` uses headless Chromium by default:
+
+1. Attempts browser fetch first (handles SPAs and authenticated content)
+2. Falls back to simple `fetch()` if browser unavailable
+3. Authentication messages guide users to log in via VNC
 
 ### Location Permission Flow
 
@@ -934,8 +1021,13 @@ checker.stop();
 | `extract-audio` | Extract speakers, transcription, intentions from audio files |
 | `extract-video` | Extract audio + visual info from video files |
 | `extract-image` | Extract visual info, text, diagrams from images |
-| `extract-url` | Fetch and extract content from URLs |
+| `extract-url` | Fetch and extract content from URLs (uses headless Chromium for SPAs/auth) |
 | `extract-document` | Extract text, summary, key points from documents (PDF, DOC, TXT, etc.) |
+
+**URL Extraction Options:**
+- `useHeadlessBrowser`: Use Chromium for JS rendering (default: true)
+- `waitForSelector`: CSS selector to wait for before extracting
+- `timeout`: Page load timeout in milliseconds
 
 ### Required API Keys
 

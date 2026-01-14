@@ -14,6 +14,7 @@ import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
 import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL, debugTranscribe, getDebugTypeDescription } from "@/server/openai";
 import { convertAndValidateAudio, type AudioConversionResult } from "@/server/audio";
+import { getBrowserService } from "@/server/browser";
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -848,11 +849,17 @@ async function callTextLlm(
 }
 
 /**
- * Extract information from URLs
+ * Extract information from URLs using headless Chromium
+ * Falls back to simple fetch if browser is unavailable
+ *
+ * Uses headless Chromium by default which:
+ * - Renders JavaScript (handles SPAs)
+ * - Uses cookies from UI Chromium sessions (handles authenticated content)
+ * - Waits for network idle before extracting content
  */
 export const extractUrlTool = defineTool({
   name: "extract-url",
-  description: "Fetch and extract information from a URL",
+  description: "Fetch and extract information from a URL using headless browser (handles SPAs and authenticated content)",
   category: "ai-extraction",
   parameters: [
     {
@@ -879,62 +886,159 @@ export const extractUrlTool = defineTool({
       description: "Model to use for text analysis",
       required: false,
     },
+    {
+      name: "useHeadlessBrowser",
+      type: "boolean",
+      description: "Use headless Chromium for JavaScript rendering (default: true)",
+      required: false,
+    },
+    {
+      name: "waitForSelector",
+      type: "string",
+      description: "CSS selector to wait for before extracting content",
+      required: false,
+    },
+    {
+      name: "timeout",
+      type: "number",
+      description: "Timeout in milliseconds (default: 30000)",
+      required: false,
+    },
   ],
   inputSchema: z.object({
     url: z.string(),
     textLlmProvider: z.enum(["anthropic", "openai"]).optional(),
     textLlmApiKey: z.string().optional(),
     textLlmModel: z.string().optional(),
+    useHeadlessBrowser: z.boolean().default(true),
+    waitForSelector: z.string().optional(),
+    timeout: z.number().default(30000),
   }),
   outputSchema: UrlExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<UrlExtractionResult>> => {
+    const useHeadlessBrowser = input.useHeadlessBrowser ?? true;
+
     try {
       context.logger.info("Extracting URL content", {
         url: input.url,
         provider: input.textLlmProvider ?? "anthropic (default)",
+        useHeadlessBrowser,
       });
 
-      // Fetch the URL content
-      const response = await fetch(input.url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
-        },
-      });
+      let html: string;
+      let fetchMethod: "browser" | "fetch" = "fetch";
+      let isAuthenticated = false;
 
-      // Check for authentication errors - these should not be retried
-      // Return success with an auth wall message to prevent retry loops
-      if (response.status === 401 || response.status === 403) {
-        logger.info({
-          event: "url_extraction.auth_error",
-          url: input.url,
-          status: response.status,
-          statusText: response.statusText,
+      // Try headless browser first if enabled
+      if (useHeadlessBrowser) {
+        try {
+          const browserService = getBrowserService();
+          const result = await browserService.fetchPage(input.url, {
+            waitForSelector: input.waitForSelector,
+            waitForNetworkIdle: true,
+            timeout: input.timeout ?? 30000,
+          });
+
+          if (result.success) {
+            html = result.html;
+            fetchMethod = "browser";
+            isAuthenticated = result.isAuthenticated;
+
+            logger.info({
+              event: "url_extraction.browser_success",
+              url: input.url,
+              finalUrl: result.finalUrl,
+              isAuthenticated,
+              htmlLength: html.length,
+            });
+          } else {
+            // Browser failed, fall back to fetch
+            logger.warn({
+              event: "url_extraction.browser_failed",
+              url: input.url,
+              error: result.error,
+            });
+            throw new Error(result.error ?? "Browser fetch failed");
+          }
+        } catch (browserError) {
+          // Browser not available or failed, fall back to simple fetch
+          logger.info({
+            event: "url_extraction.browser_fallback",
+            url: input.url,
+            error: browserError instanceof Error ? browserError.message : String(browserError),
+          });
+
+          // Fall through to simple fetch
+          const response = await fetch(input.url, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
+            },
+          });
+
+          if (response.status === 401 || response.status === 403) {
+            logger.info({
+              event: "url_extraction.auth_error",
+              url: input.url,
+              status: response.status,
+              statusText: response.statusText,
+            });
+
+            return {
+              success: true,
+              output: {
+                url: input.url,
+                title: "Content Behind Authentication Wall",
+                description: `This URL requires authentication (HTTP ${response.status})`,
+                mainContent: `This content is behind an authentication wall and cannot be accessed automatically.\n\nURL: ${input.url}\nStatus: ${response.status} ${response.statusText}\n\nTo access this content:\n1. Connect to VNC (port 5900)\n2. Open Chromium browser and log into the website\n3. Try sharing the URL again - your session cookies will be used`,
+                summary: `Content requires authentication (HTTP ${response.status}). Log in via VNC to enable access.`,
+                keyPoints: [
+                  `Authentication required (HTTP ${response.status})`,
+                  "Log into the website via VNC to enable authenticated fetching",
+                ],
+                type: "authentication-required",
+                images: [],
+                links: [],
+              },
+            };
+          }
+
+          if (!response.ok) {
+            throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+          }
+
+          html = await response.text();
+        }
+      } else {
+        // Simple fetch without browser
+        const response = await fetch(input.url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
+          },
         });
 
-        return {
-          success: true,
-          output: {
-            url: input.url,
-            title: "Content Behind Authentication Wall",
-            description: `This URL requires authentication (HTTP ${response.status})`,
-            mainContent: `This content is behind an authentication wall and cannot be accessed automatically.\n\nURL: ${input.url}\nStatus: ${response.status} ${response.statusText}\n\nTo access this content, you may need to:\n- Log in to the website directly\n- Use a browser extension with saved credentials\n- Share the content using the browser extension's "full page capture" mode while logged in`,
-            summary: `Content requires authentication (HTTP ${response.status}). Cannot be extracted automatically.`,
-            keyPoints: [
-              `Authentication required (HTTP ${response.status})`,
-              "Manual login or browser extension capture may be needed",
-            ],
-            type: "authentication-required",
-            images: [],
-            links: [],
-          },
-        };
-      }
+        if (response.status === 401 || response.status === 403) {
+          return {
+            success: true,
+            output: {
+              url: input.url,
+              title: "Content Behind Authentication Wall",
+              description: `This URL requires authentication (HTTP ${response.status})`,
+              mainContent: `This content is behind an authentication wall.\n\nURL: ${input.url}\nStatus: ${response.status} ${response.statusText}\n\nTry enabling headless browser mode to use saved sessions.`,
+              summary: `Content requires authentication (HTTP ${response.status}).`,
+              keyPoints: [`Authentication required (HTTP ${response.status})`],
+              type: "authentication-required",
+              images: [],
+              links: [],
+            },
+          };
+        }
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
-      }
+        if (!response.ok) {
+          throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+        }
 
-      const html = await response.text();
+        html = await response.text();
+      }
 
       // Determine which provider and API key to use
       const provider: TextLlmProvider = input.textLlmProvider ?? "anthropic";
@@ -966,6 +1070,7 @@ export const extractUrlTool = defineTool({
           event: "url_extraction.no_api_key",
           url: input.url,
           provider,
+          fetchMethod,
         });
 
         return {
@@ -974,7 +1079,7 @@ export const extractUrlTool = defineTool({
             url: input.url,
             title: titleMatch?.[1]?.trim(),
             description: descMatch?.[1]?.trim(),
-            mainContent: `[Configure ${provider.toUpperCase()} API key for full content extraction]`,
+            mainContent: `[Configure ${provider.toUpperCase()} API key for full content extraction]\n\nFetched via: ${fetchMethod}${isAuthenticated ? " (authenticated)" : ""}`,
             summary: "URL fetched successfully. Configure AI API key in Settings for full extraction.",
             keyPoints: [],
             type: "webpage",
@@ -989,6 +1094,8 @@ export const extractUrlTool = defineTool({
         url: input.url,
         provider,
         model,
+        fetchMethod,
+        isAuthenticated,
       });
 
       const analysisPrompt = `Analyze the following HTML content from ${input.url} and extract structured information:
