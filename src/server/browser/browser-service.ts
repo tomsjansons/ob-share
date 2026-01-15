@@ -252,13 +252,11 @@ export class BrowserService {
         // Extract page content from the rendered DOM
         // Use page.evaluate() to get the actual current DOM state (not the original HTML)
         const title = await page.title();
-        const { html, text } = await page.evaluate(() => {
-          // Force a reflow to ensure DOM is fully rendered
-          document.body.offsetHeight;
-          return {
-            html: document.documentElement.outerHTML,
-            text: document.body?.innerText ?? "",
-          };
+        const html = await page.evaluate(() => {
+          return document.body.innerHTML;
+        });
+        const text = await page.evaluate(() => {
+          return document.body?.innerText ?? "";
         });
         const finalUrl = page.url();
 
