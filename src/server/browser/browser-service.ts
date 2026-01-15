@@ -192,6 +192,9 @@ export class BrowserService {
       const page = await this.browser.newPage();
 
       try {
+        // Ensure JavaScript is enabled (critical for SPAs)
+        await page.setJavaScriptEnabled(true);
+
         // Set viewport
         await page.setViewport({ width: 1280, height: 720 });
 
@@ -326,8 +329,6 @@ export class BrowserService {
    * Uses a simple fixed delay to let JavaScript render content
    */
   private async waitForSpaContent(page: Page, url: string, timeout: number): Promise<void> {
-    // Wait for the full timeout to let SPAs render their content
-    // This is simpler and more reliable than trying to detect specific selectors
     const waitTime = Math.min(timeout, 30000);
 
     logger.info({
