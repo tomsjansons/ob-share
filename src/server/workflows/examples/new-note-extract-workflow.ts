@@ -574,7 +574,6 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
         return {
           filePath: getAttachmentPath(trigger.filePath, imageAttachment),
           openaiApiKey: trigger.openaiApiKey,
-          openaiModel: trigger.openaiModel,
         };
       },
       condition: {
