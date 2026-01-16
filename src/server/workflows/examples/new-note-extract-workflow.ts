@@ -52,8 +52,7 @@ export const NewNoteExtractTriggerSchema = z.object({
   filePath: z.string().describe("Path to the markdown file to process"),
   contentType: z.enum(["audio", "video", "image", "url", "document", "text"]).describe("Type of content in the note"),
   userId: z.string().describe("ID of the user who owns this note"),
-  openaiApiKey: z.string().optional().describe("OpenAI API key for transcription"),
-  openaiModel: z.string().optional().describe("OpenAI model for transcription"),
+  openaiApiKey: z.string().optional().describe("OpenAI API key for AI extraction"),
   textLlmProvider: z.enum(["anthropic", "openai"]).optional().describe("Text LLM provider for URL summarization"),
   textLlmApiKey: z.string().optional().describe("API key for text LLM provider"),
   textLlmModel: z.string().optional().describe("Model for text LLM provider"),
@@ -507,7 +506,6 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
         return {
           filePath: getAttachmentPath(trigger.filePath, audioAttachment),
           openaiApiKey: trigger.openaiApiKey,
-          openaiModel: trigger.openaiModel,
         };
       },
       condition: {

@@ -6,6 +6,7 @@
 
 export {
   OpenAIClient,
+  transcribeAudio,
   isValidApiKey,
   DEFAULT_AUDIO_MODEL,
   DEFAULT_VISION_MODEL,
