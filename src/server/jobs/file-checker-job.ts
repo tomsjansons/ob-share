@@ -80,7 +80,6 @@ async function scanIncomingFolder(
   userConfig: {
     userId: string;
     openaiApiKey?: string;
-    openaiModel: string;
     textLlmProvider?: "anthropic" | "openai";
     textLlmApiKey?: string;
     textLlmModel?: string;
@@ -231,7 +230,6 @@ async function scanIncomingFolder(
             contentType,
             userId: userConfig.userId,
             openaiApiKey: userConfig.openaiApiKey,
-            openaiModel: userConfig.openaiModel,
             textLlmProvider: userConfig.textLlmProvider,
             textLlmApiKey: userConfig.textLlmApiKey,
             textLlmModel: userConfig.textLlmModel,
@@ -358,7 +356,6 @@ export const fileCheckerJob = defineJob<FileCheckerJobPayload>({
             const scanResult = await scanIncomingFolder(incomingPath, {
               userId: settings.userId,
               openaiApiKey: settings.openaiApiKey ?? undefined,
-              openaiModel: settings.openaiModel,
               textLlmProvider: settings.textLlmProvider ?? undefined,
               textLlmApiKey: settings.textLlmApiKey ?? undefined,
               textLlmModel: settings.textLlmModel ?? undefined,

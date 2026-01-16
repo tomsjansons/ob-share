@@ -14,6 +14,9 @@ const logger = baseLogger.child({ module: "openai-client" });
 export const DEFAULT_AUDIO_MODEL = "whisper-1";
 export const DEFAULT_VISION_MODEL = "gpt-4o";
 
+// Default timeout for API requests (2 minutes)
+const DEFAULT_TIMEOUT = 120000;
+
 /**
  * OpenAI API configuration
  */
@@ -86,11 +89,65 @@ export interface ChatCompletionResult {
   finishReason?: string;
 }
 
-// Default timeout for API requests (2 minutes)
-const DEFAULT_TIMEOUT = 120000;
+/**
+ * Transcribe audio using whisper-1 with verbose_json format
+ *
+ * This is the exact implementation from debug type 3 which was confirmed working.
+ */
+export async function transcribeAudio(
+  apiKey: string,
+  filePath: string,
+  options?: TranscriptionOptions
+): Promise<TranscriptionResult> {
+  const model = options?.model ?? DEFAULT_AUDIO_MODEL;
+
+  logger.info({
+    event: "openai.transcribe.start",
+    filePath,
+    model,
+  });
+
+  try {
+    // Create OpenAI client exactly like debug type 3
+    const openai = new OpenAI({
+      apiKey,
+      timeout: DEFAULT_TIMEOUT,
+    });
+
+    const response = await openai.audio.transcriptions.create({
+      file: createReadStream(filePath),
+      model,
+      response_format: "verbose_json",
+      ...(options?.language && { language: options.language }),
+    });
+
+    logger.info({
+      event: "openai.transcribe.complete",
+      filePath,
+      textLength: response.text?.length ?? 0,
+    });
+
+    return {
+      text: response.text,
+      segments: response.segments?.map(s => ({
+        text: s.text,
+        start: s.start,
+        end: s.end,
+      })) ?? [],
+      duration: response.duration,
+    };
+  } catch (err) {
+    logger.error({
+      event: "openai.transcribe.error",
+      filePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
 
 /**
- * OpenAI API Client
+ * OpenAI API Client (for chat completions)
  */
 export class OpenAIClient {
   private apiKey: string;
@@ -100,63 +157,13 @@ export class OpenAIClient {
   }
 
   /**
-   * Create an OpenAI SDK client instance
-   */
-  private createClient(): OpenAI {
-    return new OpenAI({
-      apiKey: this.apiKey,
-      timeout: DEFAULT_TIMEOUT,
-    });
-  }
-
-  /**
    * Transcribe audio using whisper-1 with verbose_json format
    */
   async transcribe(
     filePath: string,
     options?: TranscriptionOptions
   ): Promise<TranscriptionResult> {
-    const model = options?.model ?? DEFAULT_AUDIO_MODEL;
-
-    logger.info({
-      event: "openai.transcribe.start",
-      filePath,
-      model,
-    });
-
-    try {
-      const openai = this.createClient();
-
-      const response = await openai.audio.transcriptions.create({
-        file: createReadStream(filePath),
-        model,
-        response_format: "verbose_json",
-        ...(options?.language && { language: options.language }),
-      });
-
-      logger.info({
-        event: "openai.transcribe.complete",
-        filePath,
-        textLength: response.text?.length ?? 0,
-      });
-
-      return {
-        text: response.text,
-        segments: response.segments?.map(s => ({
-          text: s.text,
-          start: s.start,
-          end: s.end,
-        })) ?? [],
-        duration: response.duration,
-      };
-    } catch (err) {
-      logger.error({
-        event: "openai.transcribe.error",
-        filePath,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
-    }
+    return transcribeAudio(this.apiKey, filePath, options);
   }
 
   /**
@@ -175,7 +182,10 @@ export class OpenAIClient {
     });
 
     try {
-      const openai = this.createClient();
+      const openai = new OpenAI({
+        apiKey: this.apiKey,
+        timeout: DEFAULT_TIMEOUT,
+      });
 
       // Build request parameters
       const params: OpenAI.ChatCompletionCreateParams = {

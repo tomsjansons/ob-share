@@ -167,17 +167,10 @@ export const extractAudioTool = defineTool({
       description: "OpenAI API key for audio transcription",
       required: false,
     },
-    {
-      name: "openaiModel",
-      type: "string",
-      description: "OpenAI model to use (default: whisper-1)",
-      required: false,
-    },
   ],
   inputSchema: z.object({
     filePath: z.string(),
     openaiApiKey: z.string().optional(),
-    openaiModel: z.string().optional(),
   }),
   outputSchema: AudioExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<AudioExtractionResult>> => {
@@ -189,7 +182,9 @@ export const extractAudioTool = defineTool({
 
       // Get API key from input or environment
       const apiKey = input.openaiApiKey ?? process.env.OPENAI_API_KEY;
-      const model = input.openaiModel ?? DEFAULT_AUDIO_MODEL;
+      // Always use whisper-1 for audio transcription - it's the only model that works
+      // with the standard transcriptions endpoint (gpt-4o-transcribe-diarize requires different API)
+      const model = DEFAULT_AUDIO_MODEL;
 
       if (!isValidApiKey(apiKey)) {
         logger.warn({
