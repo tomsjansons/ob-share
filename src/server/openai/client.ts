@@ -1,9 +1,7 @@
 /**
  * OpenAI API Client - Handles all OpenAI API interactions
  *
- * Provides a configurable client for:
- * - Audio transcription with diarization (GPT-4o-transcribe-diarize)
- * - Chat completions (GPT-4o)
+ * Uses Whisper-1 model for audio transcription with verbose_json format.
  */
 
 import { createReadStream } from "fs";
@@ -13,7 +11,7 @@ import OpenAI from "openai";
 const logger = baseLogger.child({ module: "openai-client" });
 
 // Default models
-export const DEFAULT_AUDIO_MODEL = "gpt-4o-transcribe-diarize";
+export const DEFAULT_AUDIO_MODEL = "whisper-1";
 export const DEFAULT_VISION_MODEL = "gpt-4o";
 
 /**
@@ -24,30 +22,27 @@ export interface OpenAIConfig {
 }
 
 /**
- * Diarized transcription segment with speaker information
- * Matches the OpenAI diarized_json response format for gpt-4o-transcribe-diarize
+ * Transcription segment from whisper-1 verbose_json format
  */
-export interface DiarizedSegment {
-  speaker: string;
+export interface TranscriptionSegment {
   text: string;
   start: number;
   end: number;
 }
 
 /**
- * Diarized transcription result from gpt-4o-transcribe-diarize
- * Response format when using response_format: "diarized_json"
+ * Transcription result from whisper-1 with verbose_json
  */
-export interface DiarizedTranscriptionResult {
+export interface TranscriptionResult {
   text: string;
-  segments: DiarizedSegment[];
-  duration?: number; // Duration in seconds (may not always be present)
+  segments: TranscriptionSegment[];
+  duration?: number;
 }
 
 /**
- * Diarization transcription options
+ * Transcription options
  */
-export interface DiarizeTranscriptionOptions {
+export interface TranscriptionOptions {
   model?: string;
   language?: string;
 }
@@ -115,22 +110,16 @@ export class OpenAIClient {
   }
 
   /**
-   * Transcribe audio with diarization using gpt-4o-transcribe-diarize
-   * Uses the official OpenAI audio transcriptions endpoint with diarized_json response format
-   *
-   * According to OpenAI docs:
-   * - gpt-4o-transcribe-diarize supports json, text, and diarized_json response formats
-   * - chunking_strategy is required when audio is longer than 30 seconds ("auto" is recommended)
-   * - diarized_json response includes segments with speaker, text, start, and end
+   * Transcribe audio using whisper-1 with verbose_json format
    */
-  async transcribeWithDiarization(
+  async transcribe(
     filePath: string,
-    options?: DiarizeTranscriptionOptions
-  ): Promise<DiarizedTranscriptionResult> {
+    options?: TranscriptionOptions
+  ): Promise<TranscriptionResult> {
     const model = options?.model ?? DEFAULT_AUDIO_MODEL;
 
     logger.info({
-      event: "openai.transcribeDiarize.start",
+      event: "openai.transcribe.start",
       filePath,
       model,
     });
@@ -138,29 +127,31 @@ export class OpenAIClient {
     try {
       const openai = this.createClient();
 
-      // Use the SDK with createReadStream for proper file upload
-      // response_format: "diarized_json" returns segments with speaker labels
-      // chunking_strategy: "auto" is required for audio longer than 30 seconds
-      // Note: SDK types don't include diarized_json yet, but API accepts it
-      const response = await (openai.audio.transcriptions.create as (params: unknown) => Promise<unknown>)({
+      const response = await openai.audio.transcriptions.create({
         file: createReadStream(filePath),
         model,
-        response_format: "diarized_json",
-        chunking_strategy: "auto", // Required for audio > 30 seconds
+        response_format: "verbose_json",
         ...(options?.language && { language: options.language }),
-      }) as DiarizedTranscriptionResult;
+      });
 
       logger.info({
-        event: "openai.transcribeDiarize.complete",
+        event: "openai.transcribe.complete",
         filePath,
-        segmentCount: response.segments?.length ?? 0,
         textLength: response.text?.length ?? 0,
       });
 
-      return response;
+      return {
+        text: response.text,
+        segments: response.segments?.map(s => ({
+          text: s.text,
+          start: s.start,
+          end: s.end,
+        })) ?? [],
+        duration: response.duration,
+      };
     } catch (err) {
       logger.error({
-        event: "openai.transcribeDiarize.error",
+        event: "openai.transcribe.error",
         filePath,
         error: err instanceof Error ? err.message : String(err),
       });

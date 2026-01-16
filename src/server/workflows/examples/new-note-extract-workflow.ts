@@ -61,7 +61,6 @@ export const NewNoteExtractTriggerSchema = z.object({
   maxRetries: z.number().optional().describe("Maximum retry attempts"),
   isRetry: z.boolean().optional().describe("Whether this is a retry attempt"),
   retryNum: z.number().optional().describe("Current retry attempt number"),
-  debugType: z.number().optional().describe("Debug type for testing different transcription approaches (1-7)"),
 });
 
 export type NewNoteExtractTrigger = z.infer<typeof NewNoteExtractTriggerSchema>;
@@ -509,7 +508,6 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
           filePath: getAttachmentPath(trigger.filePath, audioAttachment),
           openaiApiKey: trigger.openaiApiKey,
           openaiModel: trigger.openaiModel,
-          debugType: trigger.debugType,
         };
       },
       condition: {

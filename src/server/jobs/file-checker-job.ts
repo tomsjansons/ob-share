@@ -204,9 +204,6 @@ async function scanIncomingFolder(
         const isRetry = parsed.data.status === "retry" || isStuck;
         const retryNum = typeof parsed.data["retry-num"] === "number" ? parsed.data["retry-num"] : 0;
 
-        // Read debug_type from frontmatter for testing different transcription approaches
-        const debugType = typeof parsed.data.debug_type === "number" ? parsed.data.debug_type : undefined;
-
         // Log appropriate event based on file state
         const eventType = isStuck
           ? "file-checker-job.stuck_file_recovered"
@@ -220,7 +217,6 @@ async function scanIncomingFolder(
           contentType,
           userId: userConfig.userId,
           retryNum: isRetry ? retryNum : undefined,
-          debugType,
           isStuck,
         });
 
@@ -243,7 +239,6 @@ async function scanIncomingFolder(
             maxRetries: userConfig.maxRetries,
             isRetry,
             retryNum,
-            debugType,
           },
           userId: userConfig.userId,
         });
