@@ -214,6 +214,10 @@ export const extractAudioTool = defineTool({
         };
       }
 
+      // TESTING: Skip audio conversion to test if webm files work directly with OpenAI API
+      // The OpenAI transcriptions endpoint claims to support webm format natively
+      // TODO: Remove this comment block and restore conversion if webm doesn't work
+      /*
       // Convert audio to WAV if needed (webm, ogg, m4a, opus, flac -> wav)
       // Native formats (wav, mp3) will not be converted
       // The conversion also validates duration and saves the WAV file to vault
@@ -242,6 +246,21 @@ export const extractAudioTool = defineTool({
           validationWarning: conversionResult.validationError,
         });
       }
+      */
+
+      // TESTING: Use original file directly without conversion
+      conversionResult = {
+        wasConverted: false,
+        transcriptionFilePath: input.filePath,
+        durationValid: true,
+      };
+
+      logger.info({
+        event: "audio_extraction.testing_webm_direct",
+        filePath: input.filePath,
+        format: originalExt,
+        note: "Testing webm transcription without conversion to WAV",
+      });
 
       // Use OpenAI client for transcription with whisper-1
       const openai = new OpenAIClient({ apiKey });
