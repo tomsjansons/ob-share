@@ -106,51 +106,68 @@ function extractUrls(body: string): string[] {
 }
 
 /**
- * Remove diagnostic-only artifacts from URL main content before rendering.
+ * Normalize markdown so YAML frontmatter starts at the first line when present.
+ * If noise exists before frontmatter, return it separately for diagnostics.
  */
-function sanitizeUrlMainContent(mainContent: string): string {
-  let cleaned = mainContent.trimStart();
+function normalizeFrontmatterPlacement(content: string): {
+  normalizedMarkdown: string;
+  prefixNoise: string;
+} {
+  const lines = content.split(/\r?\n/);
+  const firstDelimiterIndex = lines.findIndex((line) => line.trim() === "---");
 
-  // Remove accidental nested frontmatter blocks at the beginning of extracted content.
-  if (cleaned.startsWith("---\n") || cleaned === "---" || cleaned.startsWith("---\r\n")) {
-    cleaned = cleaned.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trimStart();
+  if (firstDelimiterIndex <= 0) {
+    return {
+      normalizedMarkdown: content,
+      prefixNoise: "",
+    };
   }
 
-  const diagnosticPrefixes = ["Response length:", "Looks like JSON:", "Contains full_text field:"];
-  const diagnosticSectionMarkers = [
-    "### Capture Diagnostics",
-    "## Capture Diagnostics",
-    "Capture Diagnostics:",
-    "Diagnostics:",
-  ];
+  const hasLeadingNonEmptyLines = lines
+    .slice(0, firstDelimiterIndex)
+    .some((line) => line.trim().length > 0);
 
-  const lines = cleaned.split(/\r?\n/);
-  const filteredLines: string[] = [];
-  let inDiagnosticSection = true;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-
-    if (inDiagnosticSection) {
-      if (trimmed.length === 0) {
-        continue;
-      }
-
-      if (diagnosticPrefixes.some((prefix) => trimmed.startsWith(prefix))) {
-        continue;
-      }
-
-      if (diagnosticSectionMarkers.some((marker) => trimmed.startsWith(marker))) {
-        continue;
-      }
-
-      inDiagnosticSection = false;
-    }
-
-    filteredLines.push(line);
+  if (!hasLeadingNonEmptyLines) {
+    return {
+      normalizedMarkdown: content,
+      prefixNoise: "",
+    };
   }
 
-  return filteredLines.join("\n").trim();
+  const closingDelimiterRelativeIndex = lines
+    .slice(firstDelimiterIndex + 1)
+    .findIndex((line) => line.trim() === "---");
+
+  if (closingDelimiterRelativeIndex === -1) {
+    return {
+      normalizedMarkdown: content,
+      prefixNoise: "",
+    };
+  }
+
+  return {
+    prefixNoise: lines.slice(0, firstDelimiterIndex).join("\n").trim(),
+    normalizedMarkdown: lines.slice(firstDelimiterIndex).join("\n"),
+  };
+}
+
+/**
+ * Remove a leading frontmatter block from markdown body content, if present.
+ */
+function stripLeadingFrontmatterBlock(body: string): string {
+  const trimmedStart = body.trimStart();
+  const lines = trimmedStart.split(/\r?\n/);
+
+  if (lines[0]?.trim() !== "---") {
+    return trimmedStart;
+  }
+
+  const closingDelimiterIndex = lines.slice(1).findIndex((line) => line.trim() === "---");
+  if (closingDelimiterIndex === -1) {
+    return trimmedStart;
+  }
+
+  return lines.slice(closingDelimiterIndex + 2).join("\n").trimStart();
 }
 
 /**
@@ -528,14 +545,19 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
         });
 
         const content = await fs.readFile(trigger.filePath, "utf-8");
-        const parsed = parseFrontmatter(content);
-        const attachments = extractAttachments(parsed.content);
-        const urls = extractUrls(parsed.content);
+        const { normalizedMarkdown, prefixNoise } = normalizeFrontmatterPlacement(content);
+        const parsed = parseFrontmatter(normalizedMarkdown);
+        const diagnosticPrefixNote = prefixNoise
+          ? `> [!warning] Leading text before frontmatter was normalized during extraction.\n>\n> ${prefixNoise.replace(/\n/g, "\n> ")}\n\n`
+          : "";
+        const normalizedBody = `${diagnosticPrefixNote}${parsed.content}`;
+        const attachments = extractAttachments(normalizedBody);
+        const urls = extractUrls(normalizedBody);
 
         return {
           content,
           data: parsed.data,
-          body: parsed.content,
+          body: normalizedBody,
           attachments,
           urls,
         };
@@ -812,7 +834,7 @@ export const newNoteExtractWorkflow = workflow("new-note-extract", "New Note Ext
         fileData.data.contentType = trigger.contentType;
 
         // Wrap original content (trimStart to avoid accumulating empty lines)
-        const trimmedBody = fileData.body.trimStart();
+        const trimmedBody = stripLeadingFrontmatterBlock(fileData.body);
         let newBody = trimmedBody;
         if (formattedExtraction) {
           // Add extracted content before original

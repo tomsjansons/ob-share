@@ -726,6 +726,8 @@ interface DiagnosticExperiment {
   details: string[];
 }
 
+type RecommendedExtractionMode = "default" | "desktop-ua-selector";
+
 async function runDiagnosticExperiment(
   name: string,
   fn: () => Promise<string[]>
@@ -740,6 +742,35 @@ async function runDiagnosticExperiment(
       details: [error instanceof Error ? error.message : String(error)],
     };
   }
+}
+
+function getRecommendedModeFromDiagnostics(
+  url: string,
+  diagnostics: UrlCaptureDiagnostics,
+): RecommendedExtractionMode | null {
+  const hostname = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return "";
+    }
+  })();
+
+  const isRedditDomain = hostname.includes("reddit.com");
+  if (!isRedditDomain) {
+    return null;
+  }
+
+  const redditExperiment = diagnostics.experiments.find(
+    experiment => experiment.name === "Reddit controlled fetch mode compare",
+  );
+
+  const recommendedDetail = redditExperiment?.details.find(detail => detail.startsWith("Recommended mode: "));
+  if (recommendedDetail?.includes("desktop-ua-selector")) {
+    return "desktop-ua-selector";
+  }
+
+  return "default";
 }
 
 
@@ -779,6 +810,7 @@ async function runUrlCaptureDiagnostics(url: string): Promise<UrlCaptureDiagnost
     }
   })();
   const isXDomain = hostname.includes("x.com") || hostname.includes("twitter.com");
+  const isRedditDomain = hostname.includes("reddit.com");
 
   experiments.push(
     await runDiagnosticExperiment("DevTools endpoint health", async () => {
@@ -1047,13 +1079,114 @@ async function runUrlCaptureDiagnostics(url: string): Promise<UrlCaptureDiagnost
     );
   }
 
+  if (isRedditDomain) {
+    experiments.push(
+      await runDiagnosticExperiment("Reddit controlled fetch mode compare", async () => {
+        const browser = await puppeteer.connect({ browserURL: debugUrl });
+
+        const runModeCapture = async (mode: RecommendedExtractionMode) => {
+          const page = await browser.newPage();
+
+          try {
+            if (mode === "desktop-ua-selector") {
+              await page.setUserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            }
+
+            const response = await page.goto(url, {
+              waitUntil: "domcontentloaded",
+              timeout: 45000,
+            });
+
+            if (mode === "desktop-ua-selector") {
+              await page.waitForSelector('shreddit-post,[data-testid="post-container"],article,main', { timeout: 15000 }).catch(() => undefined);
+            } else {
+              await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(() => undefined);
+            }
+
+            const probe = await page.evaluate(() => {
+              const selectorChecks = {
+                "shreddit-post": Boolean(document.querySelector("shreddit-post")),
+                "[data-testid=post-container]": Boolean(document.querySelector('[data-testid="post-container"]')),
+                "[data-click-id=body]": Boolean(document.querySelector('[data-click-id="body"]')),
+                article: Boolean(document.querySelector("article")),
+                main: Boolean(document.querySelector("main")),
+              };
+
+              return {
+                finalUrl: window.location.href,
+                finalUrlLength: window.location.href.length,
+                titleLength: document.title.length,
+                userAgent: navigator.userAgent,
+                selectorChecks,
+              };
+            });
+
+            const cookies = await page.cookies("https://www.reddit.com");
+            const selectorHitCount = Object.values(probe.selectorChecks).filter(Boolean).length;
+
+            return {
+              mode,
+              status: response?.status() ?? 0,
+              finalUrl: probe.finalUrl,
+              finalUrlLength: probe.finalUrlLength,
+              titleLength: probe.titleLength,
+              userAgent: probe.userAgent,
+              selectorChecks: probe.selectorChecks,
+              selectorHitCount,
+              redditCookieCount: cookies.length,
+            };
+          } finally {
+            await page.close();
+          }
+        };
+
+        try {
+          const defaultMode = await runModeCapture("default");
+          const desktopMode = await runModeCapture("desktop-ua-selector");
+
+          const recommendedMode: RecommendedExtractionMode =
+            desktopMode.selectorHitCount > defaultMode.selectorHitCount
+              ? "desktop-ua-selector"
+              : desktopMode.selectorHitCount === defaultMode.selectorHitCount && desktopMode.titleLength > defaultMode.titleLength
+                ? "desktop-ua-selector"
+                : "default";
+
+          const formatModeDetails = (result: Awaited<ReturnType<typeof runModeCapture>>) => [
+            `[${result.mode}] status=${result.status}, finalUrlLength=${result.finalUrlLength}, titleLength=${result.titleLength}`,
+            `[${result.mode}] finalUrl=${result.finalUrl}`,
+            `[${result.mode}] navigator.userAgent=${result.userAgent}`,
+            `[${result.mode}] selectors=${Object.entries(result.selectorChecks).map(([key, exists]) => `${key}:${exists}`).join(", ")}`,
+            `[${result.mode}] redditCookieCount(.reddit.com)=${result.redditCookieCount}`,
+          ];
+
+          return [
+            ...formatModeDetails(defaultMode),
+            ...formatModeDetails(desktopMode),
+            `Recommended mode: ${recommendedMode}`,
+          ];
+        } finally {
+          await browser.close();
+        }
+      }),
+    );
+  }
+
   const passed = experiments.filter(exp => exp.status === "pass").length;
+  const recommendedMode = getRecommendedModeFromDiagnostics(url, {
+    generatedAt: "",
+    targetUrl: url,
+    experiments,
+    summary: "",
+  });
+  const redditSummary = isRedditDomain
+    ? ` Recommended extraction mode for Reddit: ${recommendedMode === "desktop-ua-selector" ? "desktop-UA selector mode" : "default mode"}.`
+    : "";
 
   return {
     generatedAt: new Date().toISOString(),
     targetUrl: url,
     experiments,
-    summary: `Diagnostics complete: ${passed}/${experiments.length} experiments passed.`,
+    summary: `Diagnostics complete: ${passed}/${experiments.length} experiments passed.${redditSummary}`,
   };
 }
 
@@ -1126,6 +1259,17 @@ export const extractUrlTool = defineTool({
   outputSchema: UrlExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<UrlExtractionResult>> => {
     const useHeadlessBrowser = input.useHeadlessBrowser ?? true;
+    const parsedUrl = (() => {
+      try {
+        return new URL(input.url);
+      } catch {
+        return null;
+      }
+    })();
+    const normalizedHostname = parsedUrl?.hostname.toLowerCase().replace(/^www\./, "") ?? "";
+    const isRedditDomain = normalizedHostname === "reddit.com" || normalizedHostname.endsWith(".reddit.com");
+    const isXDomain = normalizedHostname === "x.com" || normalizedHostname.endsWith(".x.com");
+    const isTwitterDomain = normalizedHostname === "twitter.com" || normalizedHostname.endsWith(".twitter.com");
 
     try {
       context.logger.info("Extracting URL content", {
@@ -1135,50 +1279,106 @@ export const extractUrlTool = defineTool({
       });
 
       let html: string;
-      let fetchMethod: "browser" | "fetch" = "fetch";
+      let fetchMethod: "browser-network-idle" | "browser-selector" | "browser-desktop-ua" | "fetch-fallback" | "fetch-direct" = "fetch-fallback";
       let isAuthenticated = false;
       const captureDiagnostics = await runUrlCaptureDiagnostics(input.url);
+      const recommendedMode = getRecommendedModeFromDiagnostics(input.url, captureDiagnostics);
+
+      if (recommendedMode) {
+        logger.info({
+          event: "url_extraction.recommended_mode_selected",
+          url: input.url,
+          recommendedMode,
+        });
+      }
 
       // Try headless browser first if enabled
       if (useHeadlessBrowser) {
         try {
           const browserService = getBrowserService();
-          const result = await browserService.fetchPage(input.url, {
-            waitForSelector: input.waitForSelector,
-            waitForNetworkIdle: true,
-            timeout: input.timeout ?? 30000,
-          });
+          const selectorAttempt = input.waitForSelector ?? (isRedditDomain ? "main,article,[data-testid=\"post-container\"]" : "main,article");
+          const desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-          if (result.success) {
-            html = result.html;
-            fetchMethod = "browser";
-            isAuthenticated = result.isAuthenticated;
+          const browserAttempts = [
+            {
+              method: "browser-network-idle" as const,
+              options: {
+                waitForSelector: input.waitForSelector,
+                waitForNetworkIdle: true,
+                timeout: input.timeout ?? 30000,
+              },
+            },
+            {
+              method: "browser-selector" as const,
+              options: {
+                waitForSelector: selectorAttempt,
+                waitForNetworkIdle: true,
+                timeout: input.timeout ?? 30000,
+              },
+            },
+            {
+              method: "browser-desktop-ua" as const,
+              options: {
+                waitForSelector: selectorAttempt,
+                waitForNetworkIdle: true,
+                timeout: input.timeout ?? 30000,
+                userAgent: desktopUserAgent,
+                screenshot: false,
+              },
+            },
+          ];
 
-            logger.info({
-              event: "url_extraction.browser_success",
-              url: input.url,
-              finalUrl: result.finalUrl,
-              isAuthenticated,
-              htmlLength: html.length,
-            });
-          } else {
-            // Browser failed, fall back to fetch
+          let browserAttemptError: string | null = null;
+          let successfulBrowserHtml: string | null = null;
+          for (const attempt of browserAttempts) {
+            const result = await browserService.fetchPage(input.url, attempt.options);
+            if (result.success && result.status < 400) {
+              successfulBrowserHtml = result.html;
+              fetchMethod = attempt.method;
+              isAuthenticated = result.isAuthenticated;
+
+              logger.info({
+                event: "url_extraction.browser_success",
+                url: input.url,
+                finalUrl: result.finalUrl,
+                fetchMethod,
+                isAuthenticated,
+                htmlLength: successfulBrowserHtml.length,
+                domain: normalizedHostname,
+                isSocialDomain: isRedditDomain || isXDomain || isTwitterDomain,
+              });
+              browserAttemptError = null;
+              break;
+            }
+
+            browserAttemptError = result.error ?? `HTTP ${result.status}`;
             logger.warn({
-              event: "url_extraction.browser_failed",
+              event: "url_extraction.browser_attempt_failed",
               url: input.url,
+              fetchMethod: attempt.method,
+              status: result.status,
               error: result.error,
+              domain: normalizedHostname,
             });
-            throw new Error(result.error ?? "Browser fetch failed");
           }
+
+          if (!successfulBrowserHtml) {
+            throw new Error(browserAttemptError ?? "All browser fetch attempts failed");
+          }
+
+          html = successfulBrowserHtml;
         } catch (browserError) {
           // Browser not available or failed, fall back to simple fetch
           logger.info({
             event: "url_extraction.browser_fallback",
             url: input.url,
             error: browserError instanceof Error ? browserError.message : String(browserError),
+            domain: normalizedHostname,
+            isSocialDomain: isRedditDomain || isXDomain || isTwitterDomain,
           });
 
           // Fall through to simple fetch
+          fetchMethod = "fetch-fallback";
           const response = await fetch(input.url, {
             headers: {
               "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
@@ -1221,6 +1421,7 @@ export const extractUrlTool = defineTool({
         }
       } else {
         // Simple fetch without browser
+        fetchMethod = "fetch-direct";
         const response = await fetch(input.url, {
           headers: {
             "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",

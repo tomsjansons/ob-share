@@ -446,6 +446,7 @@ ob-share includes an automated system that periodically scans your incoming fold
 - Extracted content is added at the top of the note under `## Extracted [Type] Content`
 - Original content is preserved under `## Original Content`
 - Frontmatter is updated with `status`, `extractedAt`, and `contentType`
+- Extraction normalizes misplaced frontmatter (when text appears before `---`) so notes are always rewritten with frontmatter at the top; leading noise is preserved as a diagnostic warning in the body instead of before frontmatter
 
 **URL diagnostics in extracted notes:**
 - URL extraction now runs built-in capture diagnostics during note processing
@@ -453,6 +454,8 @@ ob-share includes an automated system that periodically scans your incoming fold
 - The `### Content` section is sanitized to remove diagnostic-only fragments (for example, `Response length:` / `Looks like JSON:` / `Contains full_text field:`) and accidental diagnostic headings
 - Leading nested frontmatter blocks (`--- ... ---`) are also removed from extracted URL content before rendering to keep notes readable
 - Diagnostics include: DevTools health, DevTools target inventory, cookie/session status, multiple browser-render attempts (network-idle and selector-driven), direct Puppeteer anti-bot probes, raw fetch baseline, and an X syndication fallback probe when applicable
+- Diagnostics include: DevTools health, DevTools target inventory, cookie/session status, multiple browser-render attempts (network-idle and selector-driven), direct Puppeteer anti-bot probes, raw fetch baseline, an X syndication fallback probe when applicable, and a Reddit controlled fetch comparison (default vs desktop-UA selector mode) with selector checks/cookie-count telemetry
+- For Reddit URLs, diagnostics summary now includes a concise recommended extraction mode line and extraction logs record the selected mode
 - This works for any shared URL domain (X/Twitter, Reddit, etc.) using the URL from the note
 
 **Configuration:**
@@ -761,6 +764,12 @@ Access settings via the right-click context menu to configure:
 ### X/Twitter URL Extraction Shows "JavaScript is not available"
 
 - URL extraction now runs a built-in diagnostics matrix and writes details to the note under `### Capture Diagnostics`.
+- URL fetch now uses ordered browser strategies before falling back to raw HTTP fetch:
+  1. `browser-network-idle`
+  2. `browser-selector` (uses `main,article` and Reddit-specific `main,article,[data-testid="post-container"]`)
+  3. `browser-desktop-ua` (desktop Chrome UA + selector strategy)
+  4. `fetch-fallback` (only after all browser strategies fail)
+- Extraction metadata includes `fetchMethod` for traceability of which strategy succeeded.
 - Current diagnostics include:
   - DevTools endpoint health and target inventory (`/json/version`, `/json/list`)
   - Cookie/session visibility for the target domain
@@ -768,6 +777,8 @@ Access settings via the right-click context menu to configure:
   - Direct Puppeteer anti-bot probes (console errors, request failures, webdriver value)
   - Raw fetch body/header baselines
   - X-specific URL variant comparison (`x.com` vs `twitter.com`) and syndication fallback check
+  - Reddit controlled experiment comparing default mode vs desktop-UA selector mode, including status/final URL/title lengths, `navigator.userAgent`, key Reddit selector presence, and `.reddit.com` cookie count (count only)
+- For Reddit URLs, diagnostics add a "Recommended extraction mode" summary line and URL extraction logs the selected recommendation for traceability.
 - If DevTools connection checks fail, verify Chromium is running with `--remote-debugging-port=9222`.
 - For production debugging, share a URL note and inspect the generated diagnostics section in the extracted markdown output.
 
