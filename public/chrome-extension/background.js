@@ -1,5 +1,5 @@
 // ob-share Chrome Extension - Background Service Worker
-// Version 1.1.0 - Added full page capture support
+// Version 1.1.2 - Improved SPA/full-page capture reliability
 
 const DEFAULT_OB_SHARE_URL = "https://ob-share.up.railway.app";
 
@@ -8,6 +8,21 @@ const SHARE_MODE = {
   URL_ONLY: "url_only",           // Just share the URL (default, fast)
   FULL_PAGE: "full_page",         // Capture full HTML + text + metadata
 };
+
+const CAPTURE_LIMITS = {
+  htmlChars: 1_000_000,
+  bodyTextChars: 300_000,
+  articleTextChars: 200_000,
+  selectionChars: 20_000,
+};
+
+function truncateText(value, maxChars) {
+  if (!value) return "";
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}
+
+[Truncated by extension due to size limits]`;
+}
 
 // Get the configured ob-share URL
 async function getObShareUrl() {
@@ -39,8 +54,51 @@ async function shareUrlToObShare(url, title, note = "") {
 async function capturePageContent(tabId) {
   try {
     const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
+      target: { tabId, allFrames: true },
+      func: async () => {
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+        async function waitForRenderStabilization() {
+          // Wait for initial load state first
+          if (document.readyState === "loading") {
+            await new Promise((resolve) => {
+              const onReady = () => {
+                if (document.readyState !== "loading") {
+                  document.removeEventListener("readystatechange", onReady);
+                  resolve();
+                }
+              };
+              document.addEventListener("readystatechange", onReady);
+            });
+          }
+
+          // Give SPA hydration/render a chance to settle.
+          // Stop early once text length looks stable.
+          let previousLength = 0;
+          let stableCount = 0;
+          const maxChecks = 8;
+
+          for (let i = 0; i < maxChecks; i++) {
+            await sleep(250);
+            const currentLength = document.body?.innerText?.trim().length || 0;
+
+            if (currentLength > 0 && Math.abs(currentLength - previousLength) < 40) {
+              stableCount += 1;
+            } else {
+              stableCount = 0;
+            }
+
+            previousLength = currentLength;
+
+            if (stableCount >= 2) {
+              break;
+            }
+          }
+
+          // Ensure pending layout/paint work has completed
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }
+
         // Extract main article content using common selectors
         function extractArticle() {
           const selectors = [
@@ -86,6 +144,14 @@ async function capturePageContent(tabId) {
           };
         }
 
+        await waitForRenderStabilization();
+
+        const serializer = new XMLSerializer();
+
+        // Remove high-churn/non-content nodes to keep capture payload manageable
+        const rootClone = document.documentElement.cloneNode(true);
+        rootClone.querySelectorAll("script, style, noscript, iframe, svg").forEach((el) => el.remove());
+
         // Get selected text if any
         const selection = window.getSelection()?.toString() || "";
 
@@ -93,12 +159,13 @@ async function capturePageContent(tabId) {
         const article = extractArticle();
 
         return {
-          url: window.location.href,
-          title: document.title,
+          frameHref: window.location.href,
+          frameTitle: document.title,
+          frameTextLength: document.body?.innerText?.trim().length || 0,
 
-          // Full page content
-          html: document.documentElement.outerHTML,
-          bodyText: document.body.innerText,
+          // Full page content (serialized current DOM snapshot)
+          html: serializer.serializeToString(rootClone),
+          bodyText: document.body?.innerText || "",
 
           // Extracted article (if found)
           articleHtml: article?.html || null,
@@ -109,14 +176,44 @@ async function capturePageContent(tabId) {
 
           // Metadata
           meta: extractMetadata(),
-
-          // Capture timestamp
-          capturedAt: new Date().toISOString(),
         };
       },
     });
 
-    return results[0]?.result || null;
+    const frameResults = (results || [])
+      .map((entry) => entry?.result)
+      .filter(Boolean);
+
+    if (frameResults.length === 0) {
+      return null;
+    }
+
+    // Prefer the frame with the most rendered text. This helps on SPA hosts
+    // that render content inside an iframe.
+    const bestFrame = frameResults.reduce((best, current) => {
+      if (!best) return current;
+      return (current.frameTextLength || 0) > (best.frameTextLength || 0) ? current : best;
+    }, null);
+
+    if (!bestFrame) {
+      return null;
+    }
+
+    return {
+      url: bestFrame.frameHref,
+      title: bestFrame.frameTitle,
+      html: truncateText(bestFrame.html, CAPTURE_LIMITS.htmlChars),
+      bodyText: truncateText(bestFrame.bodyText, CAPTURE_LIMITS.bodyTextChars),
+      articleHtml: bestFrame.articleHtml
+        ? truncateText(bestFrame.articleHtml, CAPTURE_LIMITS.htmlChars)
+        : null,
+      articleText: bestFrame.articleText
+        ? truncateText(bestFrame.articleText, CAPTURE_LIMITS.articleTextChars)
+        : null,
+      selection: truncateText(bestFrame.selection, CAPTURE_LIMITS.selectionChars),
+      meta: bestFrame.meta,
+      capturedAt: new Date().toISOString(),
+    };
   } catch (error) {
     console.error("Failed to capture page content:", error);
     return null;
@@ -161,7 +258,8 @@ async function shareFullPageToObShare(tab, note = "") {
     });
 
     if (!response.ok) {
-      throw new Error(`Server returned ${response.status}`);
+      const responseText = await response.text().catch(() => "");
+      throw new Error(`Server returned ${response.status}${responseText ? `: ${responseText}` : ""}`);
     }
 
     const result = await response.json();

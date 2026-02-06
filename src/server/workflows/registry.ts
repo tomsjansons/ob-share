@@ -156,9 +156,9 @@ export const WorkflowRegistry = new WorkflowRegistryImpl();
  * Decorator for registering workflow classes
  */
 export function RegisterWorkflow(): ClassDecorator {
-  return function (target: Function) {
+  return function (target: new () => WorkflowDefinition) {
     // Create instance and register
-    const instance = new (target as new () => WorkflowDefinition)();
+    const instance = new target();
     WorkflowRegistry.register(instance);
   };
 }
@@ -169,7 +169,7 @@ export function RegisterWorkflow(): ClassDecorator {
 export function initializeWorkflows(
   workflowModules: Record<string, WorkflowDefinition | undefined>
 ): void {
-  for (const [key, workflow] of Object.entries(workflowModules)) {
+  for (const workflow of Object.values(workflowModules)) {
     if (workflow && typeof workflow === "object" && "id" in workflow) {
       WorkflowRegistry.register(workflow);
     }
