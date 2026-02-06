@@ -124,7 +124,6 @@ ob-share/
 ├── scripts/
 │   ├── migrate.ts          # Database migration and seeding script
 │   ├── generate-extension-icons.ts # Icon generation for extension
-│   └── debug-x-capture.ts  # Diagnostics for X/Twitter capture issues
 ├── public/
 │   ├── manifest.json       # PWA manifest with share target
 │   ├── icon-192.svg        # PWA icon (192x192)
@@ -451,7 +450,7 @@ ob-share includes an automated system that periodically scans your incoming fold
 **URL diagnostics in extracted notes:**
 - URL extraction now runs built-in capture diagnostics during note processing
 - Results are written into the same note under `### Capture Diagnostics`
-- Diagnostics include: DevTools endpoint health, cookie/session status, browser-render fetch result, and raw fetch baseline
+- Diagnostics include: DevTools health, DevTools target inventory, cookie/session status, multiple browser-render attempts (network-idle and selector-driven), direct Puppeteer anti-bot probes, raw fetch baseline, and an X syndication fallback probe when applicable
 - This works for any shared URL domain (X/Twitter, Reddit, etc.) using the URL from the note
 
 **Configuration:**
@@ -759,21 +758,16 @@ Access settings via the right-click context menu to configure:
 
 ### X/Twitter URL Extraction Shows "JavaScript is not available"
 
-- Run the diagnostics script to compare remote-debug Chromium behavior vs raw fetch:
-
-```bash
-pnpm debug:x-capture "https://x.com/i/status/<tweet-id>"
-```
-
-- The script writes a markdown report to `tmp/x-capture-debug.md` with experiments for:
-  - DevTools endpoint health (`http://127.0.0.1:9222/json/version`)
-  - Puppeteer connection to shared Chromium profile
-  - Cookie visibility for `x.com` in the shared browser context
-  - Rendered DOM checks (article/main presence, JS-disabled fallback text, webdriver signal)
-  - Raw `fetch()` baseline comparison
-- If DevTools connection fails, verify Chromium is running under supervisor with `--remote-debugging-port=9222`.
-
-- If you cannot run diagnostics scripts in production, share a URL note normally and inspect the generated `### Capture Diagnostics` section in the extracted markdown output.
+- URL extraction now runs a built-in diagnostics matrix and writes details to the note under `### Capture Diagnostics`.
+- Current diagnostics include:
+  - DevTools endpoint health and target inventory (`/json/version`, `/json/list`)
+  - Cookie/session visibility for the target domain
+  - Multiple browser fetch strategies (network-idle, selector-based, desktop UA + screenshot)
+  - Direct Puppeteer anti-bot probes (console errors, request failures, webdriver value)
+  - Raw fetch body/header baselines
+  - X-specific URL variant comparison (`x.com` vs `twitter.com`) and syndication fallback check
+- If DevTools connection checks fail, verify Chromium is running with `--remote-debugging-port=9222`.
+- For production debugging, share a URL note and inspect the generated diagnostics section in the extracted markdown output.
 
 ### Workflow Build Issues
 
