@@ -43,6 +43,7 @@ ob-share/
 ├── railway.toml            # Railway deployment config
 ├── supervisord.conf        # Process manager config
 ├── package.json            # Node.js dependencies
+├── .eslintrc.json          # ESLint configuration for Next.js and TypeScript
 ├── drizzle.config.ts       # Database configuration
 ├── .env.example            # Environment variables template
 ├── .gitignore              # Git ignore patterns
@@ -217,6 +218,22 @@ pnpm db:push
 
 # Start development server
 pnpm dev
+
+# Run lint checks
+pnpm lint
+```
+
+## Linting
+
+The project includes a committed ESLint configuration (`.eslintrc.json`) extending:
+
+- `next/core-web-vitals`
+- `next/typescript`
+
+Run lint checks with:
+
+```bash
+pnpm lint
 ```
 
 ## Configuration
@@ -693,6 +710,8 @@ For desktop browsers, ob-share provides a private Chrome extension for one-click
 | Share with note | Add context or notes when sharing via right-click menu |
 | Share links | Right-click any link to share it directly |
 | Share selection | Select text and share it as a note |
+| SPA-aware capture | Full-page capture waits for client-side rendering and chooses the most content-rich frame |
+| Payload safeguards | Large DOM captures are trimmed to avoid API size-limit fallbacks |
 | Configurable URL | Point to your own ob-share instance |
 
 ### Installing the Extension
@@ -704,6 +723,8 @@ For desktop browsers, ob-share provides a private Chrome extension for one-click
 5. **Load**: Click "Load unpacked" and select the extracted folder
 
 The extension works with Chrome, Vivaldi, Edge, Brave, and other Chromium-based browsers.
+
+> After updates, click **Reload** on `chrome://extensions` so new capture logic and host permissions are applied.
 
 ### Using the Extension
 
@@ -721,6 +742,13 @@ Access settings via the right-click context menu to configure:
 - **ob-share URL**: Your ob-share instance URL (default: `https://ob-share.up.railway.app`)
 
 ## Troubleshooting
+
+### Browser Extension Capture Issues
+
+- **Only HTML shell captured on SPAs (X/Twitter, Reddit, etc.):** Use **Capture full page content** (or set default mode to `full_page`). The extension waits for render stabilization and prefers the frame with the most visible text.
+- **Still getting shell content:** Reload the extension (to pick up new permissions), wait until the page visibly finishes loading, then retry capture.
+- **Pages that block extension/script injection:** Browser-internal pages (`chrome://*`), extension pages, and some protected contexts cannot be captured and will fall back to URL-only mode.
+- **Fallback to URL extraction unexpectedly:** This usually means captured payload was rejected (for example, too large). The extension now trims oversized payloads before upload; if it still happens, retry after reducing open side panels/popups on the page.
 
 ### VNC Connection Issues
 
