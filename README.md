@@ -750,6 +750,10 @@ Access settings via the right-click context menu to configure:
 - **Pages that block extension/script injection:** Browser-internal pages (`chrome://*`), extension pages, and some protected contexts cannot be captured and will fall back to URL-only mode.
 - **Fallback to URL extraction unexpectedly:** This usually means captured payload was rejected (for example, too large). The extension now trims oversized payloads before upload; if it still happens, retry after reducing open side panels/popups on the page.
 
+### Workflow Build Issues
+
+- **TypeScript decorator type error in `RegisterWorkflow`:** If `next build` fails with a `ClassDecorator` mismatch in `src/server/workflows/registry.ts`, ensure the decorator returns a function typed as a class constructor (`abstract new () => WorkflowDefinition`) and cast the returned function to `ClassDecorator`. This keeps compatibility with strict TypeScript and ESLint `no-unsafe-function-type` rules.
+
 ### VNC Connection Issues
 
 - **Connection refused:** Ensure the container is running (`docker compose ps`)
