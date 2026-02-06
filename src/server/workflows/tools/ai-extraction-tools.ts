@@ -7,6 +7,7 @@
 
 import { promises as fs } from "fs";
 import path from "path";
+import puppeteer, { type ConsoleMessage, type HTTPRequest } from "puppeteer-core";
 import { z } from "zod";
 import OpenAI from "openai";
 import { defineTool } from "../steps/tool-step";
@@ -741,6 +742,31 @@ async function runDiagnosticExperiment(
   }
 }
 
+
+function buildBrowserFetchDetails(result: {
+  status: number;
+  finalUrl: string;
+  title: string;
+  html: string;
+  text: string;
+  isAuthenticated: boolean;
+  screenshot?: string;
+}): string[] {
+  const jsDisabledMarker = result.text.includes("JavaScript is not available") || result.text.includes("JavaScript is disabled");
+
+  return [
+    `Status: ${result.status}`,
+    `Final URL: ${result.finalUrl}`,
+    `Title: ${result.title || "(empty)"}`,
+    `HTML length: ${result.html.length}`,
+    `Text length: ${result.text.length}`,
+    `Authenticated marker detected: ${result.isAuthenticated}`,
+    `Contains JS-disabled fallback text: ${jsDisabledMarker}`,
+    `Screenshot captured: ${Boolean(result.screenshot)}`,
+    `Text preview: ${result.text.replace(/\s+/g, " ").slice(0, 300)}`,
+  ];
+}
+
 async function runUrlCaptureDiagnostics(url: string): Promise<UrlCaptureDiagnostics> {
   const experiments: DiagnosticExperiment[] = [];
 
@@ -752,6 +778,7 @@ async function runUrlCaptureDiagnostics(url: string): Promise<UrlCaptureDiagnost
       return "";
     }
   })();
+  const isXDomain = hostname.includes("x.com") || hostname.includes("twitter.com");
 
   experiments.push(
     await runDiagnosticExperiment("DevTools endpoint health", async () => {
@@ -766,6 +793,26 @@ async function runUrlCaptureDiagnostics(url: string): Promise<UrlCaptureDiagnost
         `Browser: ${String(data.Browser ?? "unknown")}`,
         `User-Agent: ${String(data["User-Agent"] ?? "unknown")}`,
         `WebSocket debugger URL present: ${Boolean(data.webSocketDebuggerUrl)}`,
+      ];
+    })
+  );
+
+  experiments.push(
+    await runDiagnosticExperiment("DevTools targets overview", async () => {
+      const response = await fetch(`${debugUrl}/json/list`);
+      if (!response.ok) {
+        throw new Error(`DevTools target list returned ${response.status} ${response.statusText}`);
+      }
+
+      const targets = await response.json() as Array<Record<string, unknown>>;
+      const pageTargets = targets.filter(target => target.type === "page");
+      const xTargets = pageTargets.filter(target => String(target.url ?? "").includes("x.com") || String(target.url ?? "").includes("twitter.com"));
+
+      return [
+        `Total targets: ${targets.length}`,
+        `Page targets: ${pageTargets.length}`,
+        `Targets on x.com/twitter.com: ${xTargets.length}`,
+        ...xTargets.slice(0, 5).map((target, index) => `X target ${index + 1}: ${String(target.url ?? "(empty)")}`),
       ];
     })
   );
@@ -789,7 +836,7 @@ async function runUrlCaptureDiagnostics(url: string): Promise<UrlCaptureDiagnost
   );
 
   experiments.push(
-    await runDiagnosticExperiment("Browser rendering fetch", async () => {
+    await runDiagnosticExperiment("Browser rendering fetch (network idle)", async () => {
       const browserService = getBrowserService();
       const result = await browserService.fetchPage(url, {
         waitForNetworkIdle: true,
@@ -800,18 +847,133 @@ async function runUrlCaptureDiagnostics(url: string): Promise<UrlCaptureDiagnost
         throw new Error(result.error ?? "Browser fetch failed");
       }
 
-      const jsDisabledMarker = result.text.includes("JavaScript is not available") || result.text.includes("JavaScript is disabled");
+      return buildBrowserFetchDetails(result);
+    })
+  );
+
+  experiments.push(
+    await runDiagnosticExperiment("Browser rendering fetch (selector wait)", async () => {
+      const browserService = getBrowserService();
+      const result = await browserService.fetchPage(url, {
+        waitForSelector: isXDomain ? 'article,[data-testid="tweet"]' : "main,article",
+        waitForNetworkIdle: false,
+        timeout: 45000,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error ?? "Browser fetch failed");
+      }
+
+      return buildBrowserFetchDetails(result);
+    })
+  );
+
+  experiments.push(
+    await runDiagnosticExperiment("Browser rendering fetch (desktop UA + screenshot)", async () => {
+      const browserService = getBrowserService();
+      const result = await browserService.fetchPage(url, {
+        waitForSelector: isXDomain ? 'article,[data-testid="tweetText"],main' : "main,article",
+        waitForNetworkIdle: false,
+        timeout: 45000,
+        screenshot: true,
+        userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      });
+
+      if (!result.success) {
+        throw new Error(result.error ?? "Browser fetch failed");
+      }
+
+      return buildBrowserFetchDetails(result);
+    })
+  );
+
+  experiments.push(
+    await runDiagnosticExperiment("Raw fetch response headers", async () => {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
+        },
+      });
 
       return [
-        `Status: ${result.status}`,
-        `Final URL: ${result.finalUrl}`,
-        `Title: ${result.title || "(empty)"}`,
-        `HTML length: ${result.html.length}`,
-        `Text length: ${result.text.length}`,
-        `Authenticated marker detected: ${result.isAuthenticated}`,
-        `Contains JS-disabled fallback text: ${jsDisabledMarker}`,
-        `Text preview: ${result.text.replace(/\s+/g, " ").slice(0, 300)}`,
+        `HTTP status: ${response.status}`,
+        `content-type: ${response.headers.get("content-type") ?? "(missing)"}`,
+        `cache-control: ${response.headers.get("cache-control") ?? "(missing)"}`,
+        `x-frame-options: ${response.headers.get("x-frame-options") ?? "(missing)"}`,
+        `x-response-time: ${response.headers.get("x-response-time") ?? "(missing)"}`,
+        `server: ${response.headers.get("server") ?? "(missing)"}`,
       ];
+    })
+  );
+
+  experiments.push(
+    await runDiagnosticExperiment("Direct Puppeteer capture with anti-bot probes", async () => {
+      const browser = await puppeteer.connect({ browserURL: debugUrl });
+      try {
+        const page = await browser.newPage();
+        const consoleMessages: string[] = [];
+        const requestFailures: string[] = [];
+
+        page.on("console", (msg: ConsoleMessage) => {
+          consoleMessages.push(`${msg.type()}: ${msg.text()}`);
+        });
+        page.on("requestfailed", (req: HTTPRequest) => {
+          requestFailures.push(`${req.method()} ${req.url()} => ${req.failure()?.errorText ?? "unknown"}`);
+        });
+
+        await page.setViewport({ width: 1366, height: 900 });
+        await page.setExtraHTTPHeaders({ "Accept-Language": "en-US,en;q=0.9" });
+        await page.setBypassCSP(true);
+        await page.evaluateOnNewDocument(() => {
+          Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+        });
+
+        const response = await page.goto(url, {
+          waitUntil: "domcontentloaded",
+          timeout: 45000,
+        });
+
+        await page.waitForSelector(isXDomain ? 'article,[data-testid="tweetText"],main' : "main,article", { timeout: 15000 }).catch(() => undefined);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        const probe = await page.evaluate(() => {
+          const bodyText = document.body?.innerText ?? "";
+          const html = document.documentElement?.outerHTML ?? "";
+
+          return {
+            finalUrl: window.location.href,
+            readyState: document.readyState,
+            title: document.title,
+            bodyLength: bodyText.length,
+            htmlLength: html.length,
+            articleCount: document.querySelectorAll("article").length,
+            tweetTextCount: document.querySelectorAll('[data-testid="tweetText"]').length,
+            containsJsFallback: bodyText.includes("JavaScript is not available") || bodyText.includes("JavaScript is disabled"),
+            navigatorWebdriver: (navigator as Navigator & { webdriver?: boolean }).webdriver,
+            textPreview: bodyText.replace(/\s+/g, " ").slice(0, 240),
+          };
+        });
+
+        await page.close();
+
+        return [
+          `Navigation status: ${response?.status() ?? 0}`,
+          `Final URL: ${probe.finalUrl}`,
+          `Ready state: ${probe.readyState}`,
+          `Title: ${probe.title || "(empty)"}`,
+          `Body length: ${probe.bodyLength}`,
+          `HTML length: ${probe.htmlLength}`,
+          `Article count: ${probe.articleCount}`,
+          `tweetText elements: ${probe.tweetTextCount}`,
+          `Contains JS-disabled fallback text: ${probe.containsJsFallback}`,
+          `navigator.webdriver: ${String(probe.navigatorWebdriver)}`,
+          `Text preview: ${probe.textPreview}`,
+          ...consoleMessages.slice(0, 12).map(message => `Console -> ${message}`),
+          ...requestFailures.slice(0, 12).map(message => `Request failed -> ${message}`),
+        ];
+      } finally {
+        await browser.close();
+      }
     })
   );
 
@@ -829,9 +991,61 @@ async function runUrlCaptureDiagnostics(url: string): Promise<UrlCaptureDiagnost
         `HTTP status: ${response.status}`,
         `Response length: ${html.length}`,
         `Contains JS-disabled fallback text: ${html.includes("JavaScript is not available") || html.includes("JavaScript is disabled")}`,
+        `Contains tweet content marker: ${html.includes("tweetText") || html.includes("data-testid=\"tweet\"")}`,
       ];
     })
   );
+
+  if (isXDomain) {
+    experiments.push(
+      await runDiagnosticExperiment("x.com vs twitter.com URL variant compare", async () => {
+        const match = url.match(/status\/(\d+)/);
+        if (!match?.[1]) {
+          throw new Error("Could not parse tweet ID from URL");
+        }
+
+        const twitterUrl = `https://twitter.com/i/status/${match[1]}`;
+        const response = await fetch(twitterUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
+          },
+          redirect: "manual",
+        });
+
+        return [
+          `Variant URL: ${twitterUrl}`,
+          `HTTP status: ${response.status}`,
+          `location header: ${response.headers.get("location") ?? "(none)"}`,
+          `set-cookie present: ${Boolean(response.headers.get("set-cookie"))}`,
+        ];
+      })
+    );
+
+    experiments.push(
+      await runDiagnosticExperiment("X syndication API fallback", async () => {
+        const tweetId = url.match(/status\/(\d+)/)?.[1];
+        if (!tweetId) {
+          throw new Error("Could not parse tweet ID from URL");
+        }
+
+        const endpoint = `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&lang=en`;
+        const response = await fetch(endpoint, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
+          },
+        });
+        const body = await response.text();
+
+        return [
+          `Endpoint: ${endpoint}`,
+          `HTTP status: ${response.status}`,
+          `Response length: ${body.length}`,
+          `Looks like JSON: ${body.trim().startsWith("{")}`,
+          `Contains full_text field: ${body.includes("\"full_text\"")}`,
+        ];
+      })
+    );
+  }
 
   const passed = experiments.filter(exp => exp.status === "pass").length;
 
