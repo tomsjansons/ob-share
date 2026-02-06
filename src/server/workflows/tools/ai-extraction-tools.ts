@@ -14,7 +14,7 @@ import type { ToolResult } from "../types";
 import { logger as baseLogger } from "@/lib/logger";
 import { OpenAIClient, isValidApiKey, DEFAULT_AUDIO_MODEL } from "@/server/openai";
 import { convertAndValidateAudio, type AudioConversionResult } from "@/server/audio";
-import { getBrowserService } from "@/server/browser";
+import { getBrowserService, getSessionStatus } from "@/server/browser";
 
 const logger = baseLogger.child({ module: "ai-extraction-tools" });
 
@@ -104,6 +104,19 @@ export const ImageExtractionResultSchema = z.object({
   colors: z.array(z.string()),
 });
 
+const UrlCaptureDiagnosticExperimentSchema = z.object({
+  name: z.string(),
+  status: z.enum(["pass", "fail"]),
+  details: z.array(z.string()),
+});
+
+const UrlCaptureDiagnosticsSchema = z.object({
+  generatedAt: z.string(),
+  targetUrl: z.string(),
+  experiments: z.array(UrlCaptureDiagnosticExperimentSchema),
+  summary: z.string(),
+});
+
 export const UrlExtractionResultSchema = z.object({
   url: z.string(),
   title: z.string().optional(),
@@ -122,6 +135,7 @@ export const UrlExtractionResultSchema = z.object({
     text: z.string(),
     url: z.string(),
   })),
+  captureDiagnostics: UrlCaptureDiagnosticsSchema.optional(),
 });
 
 export const DocumentExtractionResultSchema = z.object({
@@ -143,6 +157,7 @@ export const DocumentExtractionResultSchema = z.object({
 export type AudioExtractionResult = z.infer<typeof AudioExtractionResultSchema>;
 export type VideoExtractionResult = z.infer<typeof VideoExtractionResultSchema>;
 export type ImageExtractionResult = z.infer<typeof ImageExtractionResultSchema>;
+export type UrlCaptureDiagnostics = z.infer<typeof UrlCaptureDiagnosticsSchema>;
 export type UrlExtractionResult = z.infer<typeof UrlExtractionResultSchema>;
 export type DocumentExtractionResult = z.infer<typeof DocumentExtractionResultSchema>;
 
@@ -704,6 +719,130 @@ async function callTextLlm(
   throw new Error(`Unsupported text LLM provider: ${provider}`);
 }
 
+interface DiagnosticExperiment {
+  name: string;
+  status: "pass" | "fail";
+  details: string[];
+}
+
+async function runDiagnosticExperiment(
+  name: string,
+  fn: () => Promise<string[]>
+): Promise<DiagnosticExperiment> {
+  try {
+    const details = await fn();
+    return { name, status: "pass", details };
+  } catch (error) {
+    return {
+      name,
+      status: "fail",
+      details: [error instanceof Error ? error.message : String(error)],
+    };
+  }
+}
+
+async function runUrlCaptureDiagnostics(url: string): Promise<UrlCaptureDiagnostics> {
+  const experiments: DiagnosticExperiment[] = [];
+
+  const debugUrl = process.env.CHROME_DEBUG_URL ?? "http://127.0.0.1:9222";
+  const hostname = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return "";
+    }
+  })();
+
+  experiments.push(
+    await runDiagnosticExperiment("DevTools endpoint health", async () => {
+      const response = await fetch(`${debugUrl}/json/version`);
+      if (!response.ok) {
+        throw new Error(`DevTools endpoint returned ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json() as Record<string, unknown>;
+      return [
+        `Endpoint: ${debugUrl}/json/version`,
+        `Browser: ${String(data.Browser ?? "unknown")}`,
+        `User-Agent: ${String(data["User-Agent"] ?? "unknown")}`,
+        `WebSocket debugger URL present: ${Boolean(data.webSocketDebuggerUrl)}`,
+      ];
+    })
+  );
+
+  experiments.push(
+    await runDiagnosticExperiment("Cookie/session status for target domain", async () => {
+      const sessions = await getSessionStatus();
+      const match = sessions.filter(session => hostname.includes(session.domain.replace(/^\./, "")));
+
+      if (match.length === 0) {
+        return [
+          `No known cookie-store domain mapping for hostname: ${hostname || "unknown"}`,
+          `Known domains with cookies: ${sessions.filter(s => s.hasCookies).map(s => `${s.displayName}=${s.cookieCount}`).join(", ") || "none"}`,
+        ];
+      }
+
+      return match.map(session =>
+        `${session.displayName}: hasCookies=${session.hasCookies}, cookieCount=${session.cookieCount}`
+      );
+    })
+  );
+
+  experiments.push(
+    await runDiagnosticExperiment("Browser rendering fetch", async () => {
+      const browserService = getBrowserService();
+      const result = await browserService.fetchPage(url, {
+        waitForNetworkIdle: true,
+        timeout: 45000,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error ?? "Browser fetch failed");
+      }
+
+      const jsDisabledMarker = result.text.includes("JavaScript is not available") || result.text.includes("JavaScript is disabled");
+
+      return [
+        `Status: ${result.status}`,
+        `Final URL: ${result.finalUrl}`,
+        `Title: ${result.title || "(empty)"}`,
+        `HTML length: ${result.html.length}`,
+        `Text length: ${result.text.length}`,
+        `Authenticated marker detected: ${result.isAuthenticated}`,
+        `Contains JS-disabled fallback text: ${jsDisabledMarker}`,
+        `Text preview: ${result.text.replace(/\s+/g, " ").slice(0, 300)}`,
+      ];
+    })
+  );
+
+  experiments.push(
+    await runDiagnosticExperiment("Raw fetch baseline", async () => {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
+        },
+      });
+
+      const html = await response.text();
+
+      return [
+        `HTTP status: ${response.status}`,
+        `Response length: ${html.length}`,
+        `Contains JS-disabled fallback text: ${html.includes("JavaScript is not available") || html.includes("JavaScript is disabled")}`,
+      ];
+    })
+  );
+
+  const passed = experiments.filter(exp => exp.status === "pass").length;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    targetUrl: url,
+    experiments,
+    summary: `Diagnostics complete: ${passed}/${experiments.length} experiments passed.`,
+  };
+}
+
 /**
  * Extract information from URLs using headless Chromium
  * Falls back to simple fetch if browser is unavailable
@@ -784,6 +923,7 @@ export const extractUrlTool = defineTool({
       let html: string;
       let fetchMethod: "browser" | "fetch" = "fetch";
       let isAuthenticated = false;
+      const captureDiagnostics = await runUrlCaptureDiagnostics(input.url);
 
       // Try headless browser first if enabled
       if (useHeadlessBrowser) {
@@ -854,6 +994,7 @@ export const extractUrlTool = defineTool({
                 type: "authentication-required",
                 images: [],
                 links: [],
+                captureDiagnostics,
               },
             };
           }
@@ -885,6 +1026,7 @@ export const extractUrlTool = defineTool({
               type: "authentication-required",
               images: [],
               links: [],
+              captureDiagnostics,
             },
           };
         }
@@ -941,6 +1083,7 @@ export const extractUrlTool = defineTool({
             type: "webpage",
             images: [],
             links: [],
+            captureDiagnostics,
           },
         };
       }
@@ -995,7 +1138,10 @@ Respond in JSON format matching this schema:
           result.url = input.url; // Ensure URL is set
           return {
             success: true,
-            output: result,
+            output: {
+              ...result,
+              captureDiagnostics,
+            },
           };
         }
         throw new Error("No JSON found in response");
@@ -1012,6 +1158,7 @@ Respond in JSON format matching this schema:
             type: "webpage",
             images: [],
             links: [],
+            captureDiagnostics,
           },
         };
       }
