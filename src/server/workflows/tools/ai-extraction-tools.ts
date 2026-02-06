@@ -1259,6 +1259,17 @@ export const extractUrlTool = defineTool({
   outputSchema: UrlExtractionResultSchema,
   execute: async (input, context): Promise<ToolResult<UrlExtractionResult>> => {
     const useHeadlessBrowser = input.useHeadlessBrowser ?? true;
+    const parsedUrl = (() => {
+      try {
+        return new URL(input.url);
+      } catch {
+        return null;
+      }
+    })();
+    const normalizedHostname = parsedUrl?.hostname.toLowerCase().replace(/^www\./, "") ?? "";
+    const isRedditDomain = normalizedHostname === "reddit.com" || normalizedHostname.endsWith(".reddit.com");
+    const isXDomain = normalizedHostname === "x.com" || normalizedHostname.endsWith(".x.com");
+    const isTwitterDomain = normalizedHostname === "twitter.com" || normalizedHostname.endsWith(".twitter.com");
 
     try {
       context.logger.info("Extracting URL content", {
@@ -1268,7 +1279,7 @@ export const extractUrlTool = defineTool({
       });
 
       let html: string;
-      let fetchMethod: "browser" | "fetch" = "fetch";
+      let fetchMethod: "browser-network-idle" | "browser-selector" | "browser-desktop-ua" | "fetch-fallback" | "fetch-direct" = "fetch-fallback";
       let isAuthenticated = false;
       const captureDiagnostics = await runUrlCaptureDiagnostics(input.url);
       const recommendedMode = getRecommendedModeFromDiagnostics(input.url, captureDiagnostics);
@@ -1285,42 +1296,89 @@ export const extractUrlTool = defineTool({
       if (useHeadlessBrowser) {
         try {
           const browserService = getBrowserService();
-          const result = await browserService.fetchPage(input.url, {
-            waitForSelector: input.waitForSelector,
-            waitForNetworkIdle: true,
-            timeout: input.timeout ?? 30000,
-          });
+          const selectorAttempt = input.waitForSelector ?? (isRedditDomain ? "main,article,[data-testid=\"post-container\"]" : "main,article");
+          const desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-          if (result.success) {
-            html = result.html;
-            fetchMethod = "browser";
-            isAuthenticated = result.isAuthenticated;
+          const browserAttempts = [
+            {
+              method: "browser-network-idle" as const,
+              options: {
+                waitForSelector: input.waitForSelector,
+                waitForNetworkIdle: true,
+                timeout: input.timeout ?? 30000,
+              },
+            },
+            {
+              method: "browser-selector" as const,
+              options: {
+                waitForSelector: selectorAttempt,
+                waitForNetworkIdle: true,
+                timeout: input.timeout ?? 30000,
+              },
+            },
+            {
+              method: "browser-desktop-ua" as const,
+              options: {
+                waitForSelector: selectorAttempt,
+                waitForNetworkIdle: true,
+                timeout: input.timeout ?? 30000,
+                userAgent: desktopUserAgent,
+                screenshot: false,
+              },
+            },
+          ];
 
-            logger.info({
-              event: "url_extraction.browser_success",
-              url: input.url,
-              finalUrl: result.finalUrl,
-              isAuthenticated,
-              htmlLength: html.length,
-            });
-          } else {
-            // Browser failed, fall back to fetch
+          let browserAttemptError: string | null = null;
+          let successfulBrowserHtml: string | null = null;
+          for (const attempt of browserAttempts) {
+            const result = await browserService.fetchPage(input.url, attempt.options);
+            if (result.success && result.status < 400) {
+              successfulBrowserHtml = result.html;
+              fetchMethod = attempt.method;
+              isAuthenticated = result.isAuthenticated;
+
+              logger.info({
+                event: "url_extraction.browser_success",
+                url: input.url,
+                finalUrl: result.finalUrl,
+                fetchMethod,
+                isAuthenticated,
+                htmlLength: successfulBrowserHtml.length,
+                domain: normalizedHostname,
+                isSocialDomain: isRedditDomain || isXDomain || isTwitterDomain,
+              });
+              browserAttemptError = null;
+              break;
+            }
+
+            browserAttemptError = result.error ?? `HTTP ${result.status}`;
             logger.warn({
-              event: "url_extraction.browser_failed",
+              event: "url_extraction.browser_attempt_failed",
               url: input.url,
+              fetchMethod: attempt.method,
+              status: result.status,
               error: result.error,
+              domain: normalizedHostname,
             });
-            throw new Error(result.error ?? "Browser fetch failed");
           }
+
+          if (!successfulBrowserHtml) {
+            throw new Error(browserAttemptError ?? "All browser fetch attempts failed");
+          }
+
+          html = successfulBrowserHtml;
         } catch (browserError) {
           // Browser not available or failed, fall back to simple fetch
           logger.info({
             event: "url_extraction.browser_fallback",
             url: input.url,
             error: browserError instanceof Error ? browserError.message : String(browserError),
+            domain: normalizedHostname,
+            isSocialDomain: isRedditDomain || isXDomain || isTwitterDomain,
           });
 
           // Fall through to simple fetch
+          fetchMethod = "fetch-fallback";
           const response = await fetch(input.url, {
             headers: {
               "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
@@ -1363,6 +1421,7 @@ export const extractUrlTool = defineTool({
         }
       } else {
         // Simple fetch without browser
+        fetchMethod = "fetch-direct";
         const response = await fetch(input.url, {
           headers: {
             "User-Agent": "Mozilla/5.0 (compatible; ob-share/1.0; +https://github.com/ob-share)",
