@@ -785,6 +785,7 @@ Access settings via the right-click context menu to configure:
 ### Workflow Build Issues
 
 - **TypeScript decorator type error in `RegisterWorkflow`:** If `next build` fails with a `ClassDecorator` mismatch in `src/server/workflows/registry.ts`, ensure the decorator returns a function typed as a class constructor (`abstract new () => WorkflowDefinition`) and cast the returned function to `ClassDecorator`. This keeps compatibility with strict TypeScript and ESLint `no-unsafe-function-type` rules.
+- **`Cannot find name "sanitizeUrlMainContent"` in `new-note-extract-workflow.ts`:** Ensure URL extraction formatting uses a shared helper that sanitizes null bytes and trims content before adding the `mainContent` block to markdown output.
 
 ### VNC Connection Issues
 

@@ -106,6 +106,13 @@ function extractUrls(body: string): string[] {
 }
 
 /**
+ * Sanitize extracted URL content before embedding in markdown.
+ */
+function sanitizeUrlMainContent(content: string): string {
+  return content.replace(/\0/g, "").trim();
+}
+
+/**
  * Normalize markdown so YAML frontmatter starts at the first line when present.
  * If noise exists before frontmatter, return it separately for diagnostics.
  */
