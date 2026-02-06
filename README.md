@@ -123,7 +123,8 @@ ob-share/
 ├── drizzle/                # Database migrations
 ├── scripts/
 │   ├── migrate.ts          # Database migration and seeding script
-│   └── generate-extension-icons.ts # Icon generation for extension
+│   ├── generate-extension-icons.ts # Icon generation for extension
+│   └── debug-x-capture.ts  # Diagnostics for X/Twitter capture issues
 ├── public/
 │   ├── manifest.json       # PWA manifest with share target
 │   ├── icon-192.svg        # PWA icon (192x192)
@@ -439,13 +440,19 @@ ob-share includes an automated system that periodically scans your incoming fold
 | **Audio** | Speakers, transcription, intentions, background noises, mood, language |
 | **Video** | Speakers, transcription, scenes, visible texts, locations, actions, objects |
 | **Image** | Description, objects, people, visible text, diagrams, technical info, location |
-| **URL** | Title, summary, key points, main content, author, publish date |
+| **URL** | Title, summary, key points, main content, author, publish date, capture diagnostics experiments |
 | **Document** | Title, summary (meaning-focused, 2-3 sentences), key points (3-5 max) |
 
 **Extracted information format:**
 - Extracted content is added at the top of the note under `## Extracted [Type] Content`
 - Original content is preserved under `## Original Content`
 - Frontmatter is updated with `status`, `extractedAt`, and `contentType`
+
+**URL diagnostics in extracted notes:**
+- URL extraction now runs built-in capture diagnostics during note processing
+- Results are written into the same note under `### Capture Diagnostics`
+- Diagnostics include: DevTools endpoint health, cookie/session status, browser-render fetch result, and raw fetch baseline
+- This works for any shared URL domain (X/Twitter, Reddit, etc.) using the URL from the note
 
 **Configuration:**
 - Adjust the file check interval in Settings (5-3600 seconds)
@@ -749,6 +756,24 @@ Access settings via the right-click context menu to configure:
 - **Still getting shell content:** Reload the extension (to pick up new permissions), wait until the page visibly finishes loading, then retry capture.
 - **Pages that block extension/script injection:** Browser-internal pages (`chrome://*`), extension pages, and some protected contexts cannot be captured and will fall back to URL-only mode.
 - **Fallback to URL extraction unexpectedly:** This usually means captured payload was rejected (for example, too large). The extension now trims oversized payloads before upload; if it still happens, retry after reducing open side panels/popups on the page.
+
+### X/Twitter URL Extraction Shows "JavaScript is not available"
+
+- Run the diagnostics script to compare remote-debug Chromium behavior vs raw fetch:
+
+```bash
+pnpm debug:x-capture "https://x.com/i/status/<tweet-id>"
+```
+
+- The script writes a markdown report to `tmp/x-capture-debug.md` with experiments for:
+  - DevTools endpoint health (`http://127.0.0.1:9222/json/version`)
+  - Puppeteer connection to shared Chromium profile
+  - Cookie visibility for `x.com` in the shared browser context
+  - Rendered DOM checks (article/main presence, JS-disabled fallback text, webdriver signal)
+  - Raw `fetch()` baseline comparison
+- If DevTools connection fails, verify Chromium is running under supervisor with `--remote-debugging-port=9222`.
+
+- If you cannot run diagnostics scripts in production, share a URL note normally and inspect the generated `### Capture Diagnostics` section in the extracted markdown output.
 
 ### Workflow Build Issues
 
