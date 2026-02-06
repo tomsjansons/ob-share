@@ -759,6 +759,12 @@ Access settings via the right-click context menu to configure:
 ### X/Twitter URL Extraction Shows "JavaScript is not available"
 
 - URL extraction now runs a built-in diagnostics matrix and writes details to the note under `### Capture Diagnostics`.
+- URL fetch now uses ordered browser strategies before falling back to raw HTTP fetch:
+  1. `browser-network-idle`
+  2. `browser-selector` (uses `main,article` and Reddit-specific `main,article,[data-testid="post-container"]`)
+  3. `browser-desktop-ua` (desktop Chrome UA + selector strategy)
+  4. `fetch-fallback` (only after all browser strategies fail)
+- Extraction metadata includes `fetchMethod` for traceability of which strategy succeeded.
 - Current diagnostics include:
   - DevTools endpoint health and target inventory (`/json/version`, `/json/list`)
   - Cookie/session visibility for the target domain
