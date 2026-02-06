@@ -453,10 +453,12 @@ function formatUrlExtraction(result: UrlExtractionResult): string {
     sections.push("");
   }
 
-  if (result.mainContent) {
+  const sanitizedMainContent = result.mainContent ? sanitizeUrlMainContent(result.mainContent) : "";
+
+  if (sanitizedMainContent) {
     sections.push("### Content");
-    sections.push(result.mainContent.slice(0, 5000)); // Limit content length
-    if (result.mainContent.length > 5000) {
+    sections.push(sanitizedMainContent.slice(0, 5000)); // Limit content length
+    if (sanitizedMainContent.length > 5000) {
       sections.push("\n*[Content truncated...]*");
     }
     sections.push("");

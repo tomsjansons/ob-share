@@ -451,6 +451,9 @@ ob-share includes an automated system that periodically scans your incoming fold
 **URL diagnostics in extracted notes:**
 - URL extraction now runs built-in capture diagnostics during note processing
 - Results are written into the same note under `### Capture Diagnostics`
+- The `### Content` section is sanitized to remove diagnostic-only fragments (for example, `Response length:` / `Looks like JSON:` / `Contains full_text field:`) and accidental diagnostic headings
+- Leading nested frontmatter blocks (`--- ... ---`) are also removed from extracted URL content before rendering to keep notes readable
+- Diagnostics include: DevTools health, DevTools target inventory, cookie/session status, multiple browser-render attempts (network-idle and selector-driven), direct Puppeteer anti-bot probes, raw fetch baseline, and an X syndication fallback probe when applicable
 - Diagnostics include: DevTools health, DevTools target inventory, cookie/session status, multiple browser-render attempts (network-idle and selector-driven), direct Puppeteer anti-bot probes, raw fetch baseline, an X syndication fallback probe when applicable, and a Reddit controlled fetch comparison (default vs desktop-UA selector mode) with selector checks/cookie-count telemetry
 - For Reddit URLs, diagnostics summary now includes a concise recommended extraction mode line and extraction logs record the selected mode
 - This works for any shared URL domain (X/Twitter, Reddit, etc.) using the URL from the note
