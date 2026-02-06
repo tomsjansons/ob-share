@@ -446,6 +446,7 @@ ob-share includes an automated system that periodically scans your incoming fold
 - Extracted content is added at the top of the note under `## Extracted [Type] Content`
 - Original content is preserved under `## Original Content`
 - Frontmatter is updated with `status`, `extractedAt`, and `contentType`
+- Extraction normalizes misplaced frontmatter (when text appears before `---`) so notes are always rewritten with frontmatter at the top; leading noise is preserved as a diagnostic warning in the body instead of before frontmatter
 
 **URL diagnostics in extracted notes:**
 - URL extraction now runs built-in capture diagnostics during note processing
