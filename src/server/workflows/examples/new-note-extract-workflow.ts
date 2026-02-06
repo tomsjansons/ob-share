@@ -106,6 +106,54 @@ function extractUrls(body: string): string[] {
 }
 
 /**
+ * Remove diagnostic-only artifacts from URL main content before rendering.
+ */
+function sanitizeUrlMainContent(mainContent: string): string {
+  let cleaned = mainContent.trimStart();
+
+  // Remove accidental nested frontmatter blocks at the beginning of extracted content.
+  if (cleaned.startsWith("---\n") || cleaned === "---" || cleaned.startsWith("---\r\n")) {
+    cleaned = cleaned.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trimStart();
+  }
+
+  const diagnosticPrefixes = ["Response length:", "Looks like JSON:", "Contains full_text field:"];
+  const diagnosticSectionMarkers = [
+    "### Capture Diagnostics",
+    "## Capture Diagnostics",
+    "Capture Diagnostics:",
+    "Diagnostics:",
+  ];
+
+  const lines = cleaned.split(/\r?\n/);
+  const filteredLines: string[] = [];
+  let inDiagnosticSection = true;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (inDiagnosticSection) {
+      if (trimmed.length === 0) {
+        continue;
+      }
+
+      if (diagnosticPrefixes.some((prefix) => trimmed.startsWith(prefix))) {
+        continue;
+      }
+
+      if (diagnosticSectionMarkers.some((marker) => trimmed.startsWith(marker))) {
+        continue;
+      }
+
+      inDiagnosticSection = false;
+    }
+
+    filteredLines.push(line);
+  }
+
+  return filteredLines.join("\n").trim();
+}
+
+/**
  * Format audio extraction result as markdown
  */
 function formatAudioExtraction(result: AudioExtractionResult): string {
@@ -388,10 +436,12 @@ function formatUrlExtraction(result: UrlExtractionResult): string {
     sections.push("");
   }
 
-  if (result.mainContent) {
+  const sanitizedMainContent = result.mainContent ? sanitizeUrlMainContent(result.mainContent) : "";
+
+  if (sanitizedMainContent) {
     sections.push("### Content");
-    sections.push(result.mainContent.slice(0, 5000)); // Limit content length
-    if (result.mainContent.length > 5000) {
+    sections.push(sanitizedMainContent.slice(0, 5000)); // Limit content length
+    if (sanitizedMainContent.length > 5000) {
       sections.push("\n*[Content truncated...]*");
     }
     sections.push("");
