@@ -156,11 +156,14 @@ export const WorkflowRegistry = new WorkflowRegistryImpl();
  * Decorator for registering workflow classes
  */
 export function RegisterWorkflow(): ClassDecorator {
-  return function (target: new () => WorkflowDefinition) {
+  return ((target: abstract new () => WorkflowDefinition) => {
+    const workflowConstructor =
+      target as unknown as new () => WorkflowDefinition;
+
     // Create instance and register
-    const instance = new target();
+    const instance = new workflowConstructor();
     WorkflowRegistry.register(instance);
-  };
+  }) as ClassDecorator;
 }
 
 /**
