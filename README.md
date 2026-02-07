@@ -97,7 +97,6 @@ ob-share/
 │       │   ├── task-runner.ts   # Phase execution engine
 │       │   ├── scheduler.ts     # 30-min interval processing
 │       │   ├── job-service.ts   # Job CRUD operations
-│       │   └── examples/        # Example job implementations
 │       └── workflows/      # Agentic workflow system
 │           ├── types.ts    # Workflow type definitions
 │           ├── base-workflow.ts # Workflow definition base class
