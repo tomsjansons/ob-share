@@ -763,7 +763,6 @@ Access settings via the right-click context menu to configure:
 
 ### X/Twitter URL Extraction Shows "JavaScript is not available"
 
-- URL extraction now runs a built-in diagnostics matrix and writes details to the note under `### Capture Diagnostics`.
 - URL fetch now uses ordered browser strategies before falling back to raw HTTP fetch:
   1. `browser-network-idle`
   2. `browser-selector` (uses `main,article` and Reddit-specific `main,article,[data-testid="post-container"]`)
@@ -780,7 +779,6 @@ Access settings via the right-click context menu to configure:
   - Reddit controlled experiment comparing default mode vs desktop-UA selector mode, including status/final URL/title lengths, `navigator.userAgent`, key Reddit selector presence, and `.reddit.com` cookie count (count only)
 - For Reddit URLs, diagnostics add a "Recommended extraction mode" summary line and URL extraction logs the selected recommendation for traceability.
 - If DevTools connection checks fail, verify Chromium is running with `--remote-debugging-port=9222`.
-- For production debugging, share a URL note and inspect the generated diagnostics section in the extracted markdown output.
 
 ### Workflow Build Issues
 
