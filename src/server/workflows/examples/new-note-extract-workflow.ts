@@ -471,21 +471,6 @@ function formatUrlExtraction(result: UrlExtractionResult): string {
     sections.push("");
   }
 
-  if (result.captureDiagnostics) {
-    sections.push("### Capture Diagnostics");
-    sections.push(`Generated: ${result.captureDiagnostics.generatedAt}`);
-    sections.push(`Summary: ${result.captureDiagnostics.summary}`);
-    sections.push("");
-
-    for (const experiment of result.captureDiagnostics.experiments) {
-      sections.push(`#### ${experiment.name} (${experiment.status.toUpperCase()})`);
-      for (const detail of experiment.details) {
-        sections.push(`- ${detail}`);
-      }
-      sections.push("");
-    }
-  }
-
   return sections.join("\n");
 }
 
